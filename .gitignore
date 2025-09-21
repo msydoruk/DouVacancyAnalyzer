@@ -1,0 +1,53 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Configuration files with secrets
+appsettings.Development.json
+appsettings.Production.json
+appsettings.Staging.json
+
+# Visual Studio
+.vs/
+
+# JetBrains Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+.nuget/
+
+# MSTest test results
+TestResults/

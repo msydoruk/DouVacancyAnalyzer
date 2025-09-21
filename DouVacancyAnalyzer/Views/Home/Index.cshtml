@@ -1,0 +1,231 @@
+@using Microsoft.Extensions.Localization
+@inject IStringLocalizer<DouVacancyAnalyzer.SharedResources> Localizer
+@inject IStringLocalizer<DouVacancyAnalyzer.ProgressMessages> ProgressLocalizer
+
+@{
+    ViewData["Title"] = Localizer["PageTitle"];
+}
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">
+                    <i class="fas fa-search me-2"></i>
+                    @Localizer["MainHeader"]
+                </h4>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    @Localizer["Description"]
+                </p>
+                <ul class="list-unstyled mb-4">
+                    <li><i class="fas fa-check text-success me-2"></i>@Localizer["ModernTechnologies"]</li>
+                    <li><i class="fas fa-check text-success me-2"></i>@Localizer["ExperienceLevel"]</li>
+                    <li><i class="fas fa-check text-success me-2"></i>@Localizer["EnglishLevel"]</li>
+                    <li><i class="fas fa-check text-success me-2"></i>@Localizer["NoTimeTracking"]</li>
+                </ul>
+
+                <div class="alert alert-info mb-4">
+                    <h6 class="alert-heading">@Localizer["TestMode"]</h6>
+                    @Localizer["TestDescription"]
+                </div>
+
+                <div class="d-grid gap-2 d-md-flex justify-content-md-start">
+                    <button id="startTestAnalysis" class="btn btn-warning btn-lg">
+                        <i class="fas fa-flask me-2"></i>
+                        @Localizer["StartTestAnalysis"]
+                    </button>
+                    <button id="startAnalysis" class="btn btn-primary btn-lg">
+                        <i class="fas fa-play me-2"></i>
+                        @Localizer["StartAnalysis"]
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="progressSection" class="row mt-4" style="display: none;">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-spinner fa-spin me-2"></i>
+                    @Localizer["AnalysisProgress"]
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="progress mb-3">
+                    <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                         role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                    </div>
+                </div>
+                <div id="progressMessage" class="text-muted">
+                    @Localizer["PreparingAnalysis"]
+                </div>
+                <div id="progressLog" class="mt-3" style="display: none;">
+                    <h6 class="text-muted mb-2">@Localizer["DetailedProgress"]</h6>
+                    <div id="progressLogContent" class="progress-log-content">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="resultsSection" class="row mt-4" style="display: none;">
+    
+    <div class="col-md-12">
+        <div class="card border-0 shadow-lg">
+            <div class="card-header bg-gradient-primary text-white">
+                <h4 class="mb-0">
+                    <i class="fas fa-chart-line me-2"></i>
+                    @Localizer["QuickOverview"]
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="row" id="quickSummary">
+                    
+                </div>
+            </div>
+        </div>
+    </div>
+
+    
+    <div class="col-md-6">
+        <div class="card border-0 shadow">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-pie me-2"></i>
+                    @Localizer["DetailedStatistics"]
+                </h5>
+            </div>
+            <div class="card-body" id="analysisStats">
+                
+            </div>
+        </div>
+    </div>
+
+    
+    <div class="col-md-6">
+        <div class="card border-0 shadow">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-cogs me-2"></i>
+                    @Localizer["TechnologyAnalysis"]
+                </h5>
+            </div>
+            <div class="card-body" id="techStats">
+                
+            </div>
+        </div>
+    </div>
+
+    
+    <div class="col-md-12 mt-4">
+        <div class="card">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-bar me-2"></i>
+                    @Localizer["DistributionCharts"]
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <canvas id="experienceChart"></canvas>
+                    </div>
+                    <div class="col-md-6">
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    
+    <div class="col-md-12 mt-4">
+        <div class="card">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-fire me-2"></i>
+                    @Localizer["TopModernTechnologies"]
+                </h5>
+            </div>
+            <div class="card-body" id="modernTech">
+                
+            </div>
+        </div>
+    </div>
+
+    
+    <div class="col-md-12 mt-4">
+        <div class="card">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>
+                    @Localizer["MatchingVacancies"]
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped" id="vacancyTable">
+                        <thead>
+                            <tr>
+                                <th>@Localizer["Number"]</th>
+                                <th>@Localizer["JobTitle"]</th>
+                                <th>@Localizer["Company"]</th>
+                                <th>@Localizer["Location"]</th>
+                                <th>@Localizer["Experience"]</th>
+                                <th>@Localizer["English"]</th>
+                                <th>@Localizer["Score"]</th>
+                                <th>@Localizer["Link"]</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        window.localization = {
+            startAnalysis: '@Localizer["StartAnalysis"]',
+            startTestAnalysis: '@Localizer["StartTestAnalysis"]',
+            analysisInProgress: '@Localizer["AnalysisInProgress"]',
+            analysisStarted: '@ProgressLocalizer["AnalysisStarted"]',
+            analysisCompleted: '@ProgressLocalizer["AnalysisCompleted"]',
+            error: '@ProgressLocalizer["Error"]',
+            preparingAnalysis: '@Localizer["PreparingAnalysis"]',
+            totalVacancies: '@Localizer["TotalVacancies"]',
+            matching: '@Localizer["Matching"]',
+            compliance: '@Localizer["Compliance"]',
+            modernTech: '@Localizer["ModernTech"]',
+            meetsCriteria: '@Localizer["MeetsCriteria"]',
+            compliancePercentage: '@Localizer["CompliancePercentage"]',
+            withModernStack: '@Localizer["WithModernStack"]',
+            middleLevel: '@Localizer["MiddleLevel"]',
+            acceptableEnglish: '@Localizer["AcceptableEnglish"]',
+            withModernTechnologies: '@Localizer["WithModernTechnologies"]',
+            withOutdatedTechnologies: '@Localizer["WithOutdatedTechnologies"]',
+            desktopApplications: '@Localizer["DesktopApplications"]',
+            frontendPositions: '@Localizer["FrontendPositions"]',
+            withTimeTracker: '@Localizer["WithTimeTracker"]',
+            experienceLevelDistribution: '@Localizer["ExperienceLevelDistribution"]',
+            aiVacancyCategorization: '@Localizer["AiVacancyCategorization"]',
+            vacancyCount: '@Localizer["VacancyCount"]',
+            junior: '@Localizer["Junior"]',
+            middle: '@Localizer["Middle"]',
+            senior: '@Localizer["Senior"]',
+            unspecified: '@Localizer["Unspecified"]',
+            viewVacancy: '@Localizer["ViewVacancy"]'
+        };
+    </script>
+    <script src="~/js/analysis.js"></script>
+}
