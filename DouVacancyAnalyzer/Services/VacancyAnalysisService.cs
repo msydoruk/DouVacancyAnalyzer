@@ -74,6 +74,7 @@ public class VacancyAnalysisService : IVacancyAnalysisService
         {
             TotalVacancies = vacancies.Count,
             MatchingVacancies = matches.Count,
+            MatchPercentage = vacancies.Count > 0 ? (matches.Count * 100.0) / vacancies.Count : 0,
             Matches = matches.OrderByDescending(m => m.Analysis.MatchScore).ToList()
         };
     }

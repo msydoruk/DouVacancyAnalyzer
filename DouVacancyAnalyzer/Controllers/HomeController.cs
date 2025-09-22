@@ -45,15 +45,20 @@ public class HomeController : Controller
     {
         try
         {
+            _logger.LogInformation("🧪 Starting TEST ANALYSIS with limit: {Limit}", _scrapingSettings.TestModeLimit);
             await _hubContext.Clients.All.SendAsync("AnalysisStarted");
 
             await _hubContext.Clients.All.SendAsync("ProgressUpdate", _progressLocalizer["CollectingVacancies"].Value, 10);
             var vacancies = await _scrapingService.GetTestVacanciesAsync(_scrapingSettings.TestModeLimit);
 
+            _logger.LogInformation("🧪 Test mode collected {Count} vacancies", vacancies.Count);
             await _hubContext.Clients.All.SendAsync("ProgressUpdate",
                 string.Format(_progressLocalizer["FoundVacancies"].Value, vacancies.Count), 30);
 
             var (report, allAnalyses) = await AnalyzeVacanciesWithProgress(vacancies);
+
+            _logger.LogInformation("🧪 Test analysis completed: {Total} total, {Matching} matching ({Percentage:F1}%)",
+                report.TotalVacancies, report.MatchingVacancies, report.MatchPercentage);
 
             await _hubContext.Clients.All.SendAsync("ProgressUpdate", _progressLocalizer["CalculatingStatistics"].Value, 60);
             var techStats = _analysisService.GetTechnologyStatistics(vacancies);
@@ -70,13 +75,22 @@ public class HomeController : Controller
                 AiStats = aiStats
             };
 
+            _logger.LogInformation("🧪 Test mode preparing to send results:");
+            _logger.LogInformation("  Report: TotalVacancies={Total}, MatchingVacancies={Matching}, MatchPercentage={Percentage:F1}%",
+                report.TotalVacancies, report.MatchingVacancies, report.MatchPercentage);
+            _logger.LogInformation("  TechStats: Total={Total}, WithModernTech={Modern}",
+                techStats.Total, techStats.WithModernTech);
+            _logger.LogInformation("  AiStats: VacancyCategories count={Count}",
+                aiStats.VacancyCategories?.Count ?? 0);
+
             await _hubContext.Clients.All.SendAsync("AnalysisCompleted", result);
+            _logger.LogInformation("🧪 Test mode results sent to frontend");
 
             return Json(new { success = true });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during test analysis");
+            _logger.LogError(ex, "❌ Error during test analysis");
             await _hubContext.Clients.All.SendAsync("AnalysisError", ex.Message);
             return Json(new { success = false, error = ex.Message });
         }
@@ -167,8 +181,13 @@ public class HomeController : Controller
                 }
                 else
                 {
-                    _logger.LogDebug("❌ Vacancy {Title} did not match criteria: {Reason}",
-                        vacancy.Title, analysis.AnalysisReason);
+                    _logger.LogInformation("❌ Vacancy {Title} did not match criteria: Backend={Backend}, Modern={Modern}, Middle={Middle}, English={English}, NoTracker={NoTracker}",
+                        vacancy.Title,
+                        analysis.IsBackendSuitable ?? false,
+                        analysis.IsModernStack ?? false,
+                        analysis.IsMiddleLevel ?? false,
+                        analysis.HasAcceptableEnglish ?? false,
+                        analysis.HasNoTimeTracker ?? true);
                 }
             }
             catch (Exception ex)
@@ -181,8 +200,12 @@ public class HomeController : Controller
         {
             TotalVacancies = totalVacancies,
             MatchingVacancies = matches.Count,
+            MatchPercentage = totalVacancies > 0 ? (matches.Count * 100.0) / totalVacancies : 0,
             Matches = matches.OrderByDescending(m => m.Analysis.MatchScore).ToList()
         };
+
+        _logger.LogInformation("📊 Analysis Summary: {Total} total vacancies, {Matching} matching, {Percentage:F1}% match rate",
+            report.TotalVacancies, report.MatchingVacancies, report.MatchPercentage);
 
         return (report, allAnalyses);
     }

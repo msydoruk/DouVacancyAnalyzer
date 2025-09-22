@@ -40,10 +40,7 @@ public class VacancyScrapingService : IVacancyScrapingService
         
         try
         {
-            // Автоматично завантажуємо відповідну версію ChromeDriver
             new DriverManager().SetUpDriver(new ChromeConfig());
-            
-            // Налаштування Chrome в headless режимі
             var options = new ChromeOptions();
             options.AddArguments("--headless");
             options.AddArguments("--no-sandbox");
@@ -58,7 +55,6 @@ public class VacancyScrapingService : IVacancyScrapingService
             _logger.LogInformation("Loading DOU.ua page with .NET category");
             driver.Navigate().GoToUrl(_settings.BaseUrl);
             
-            // Чекаємо завантаження початкових вакансій
             wait.Until(d => d.FindElements(By.CssSelector("li.l-vacancy")).Count > 0);
             
             var previousCount = 0;
@@ -80,7 +76,6 @@ public class VacancyScrapingService : IVacancyScrapingService
                     break;
                 }
                 
-                // Шукаємо кнопку "Більше вакансій"
                 try
                 {
                     var moreButton = driver.FindElement(By.XPath("//a[contains(text(), 'Більше вакансій')]"));
@@ -89,17 +84,13 @@ public class VacancyScrapingService : IVacancyScrapingService
                     {
                         _logger.LogInformation("Clicking 'Load More' button");
                         
-                        // Прокручуємо до кнопки
                         ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView(true);", moreButton);
                         await Task.Delay(1000, cancellationToken);
                         
-                        // Натискаємо
                         moreButton.Click();
                         
-                        // Чекаємо завантаження
                         await Task.Delay(3000, cancellationToken);
                         
-                        // Чекаємо поки з'являться нові вакансії
                         try
                         {
                             wait.Until(d => d.FindElements(By.CssSelector("li.l-vacancy")).Count > currentCount);
@@ -124,12 +115,10 @@ public class VacancyScrapingService : IVacancyScrapingService
                 previousCount = currentCount;
                 attempts++;
                 
-                // Додаткова перевірка на cancellation
                 if (cancellationToken.IsCancellationRequested)
                     break;
             }
             
-            // Отримуємо фінальний HTML та парсимо всі вакансії
             var finalHtml = driver.PageSource;
             var doc = new HtmlDocument();
             doc.LoadHtml(finalHtml);
@@ -180,24 +169,79 @@ public class VacancyScrapingService : IVacancyScrapingService
 
     public async Task<List<Vacancy>> GetTestVacanciesAsync(int limit, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Starting DOU.ua test scraping for {Limit} vacancies (quick mode)", limit);
+        _logger.LogInformation("Starting DOU.ua test scraping for {Limit} vacancies using Selenium (test mode)", limit);
+
+        var vacancies = new List<Vacancy>();
+        IWebDriver? driver = null;
 
         try
         {
-            // For test mode, only get first page to avoid long loading times
-            var firstPageVacancies = await GetVacanciesFromPageAsync(1, cancellationToken);
-            var testVacancies = firstPageVacancies.Take(limit).ToList();
+            new DriverManager().SetUpDriver(new ChromeConfig());
 
-            _logger.LogInformation("Test scraping completed. Returning {Count} vacancies from first page",
-                testVacancies.Count);
+            var options = new ChromeOptions();
+            options.AddArguments("--headless");
+            options.AddArguments("--no-sandbox");
+            options.AddArguments("--disable-dev-shm-usage");
+            options.AddArguments("--disable-gpu");
+            options.AddArguments("--window-size=1920,1080");
+            options.AddArgument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
 
-            return testVacancies;
+            driver = new ChromeDriver(options);
+            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(15));
+
+            _logger.LogInformation("Loading DOU.ua page with .NET category for test mode");
+            driver.Navigate().GoToUrl(_settings.BaseUrl);
+
+            wait.Until(d => d.FindElements(By.CssSelector("li.l-vacancy")).Count > 0);
+
+            _logger.LogInformation("Getting initial vacancies for test mode (no 'Load More' clicks)");
+
+            var html = driver.PageSource;
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
+
+            var vacancyElements = doc.DocumentNode.SelectNodes("//li[contains(@class, 'l-vacancy')]") ??
+                                 Enumerable.Empty<HtmlNode>();
+
+            _logger.LogInformation("Found {Count} vacancy elements on first page", vacancyElements.Count());
+
+            foreach (var element in vacancyElements.Take(limit))
+            {
+                try
+                {
+                    var vacancy = ParseVacancyElement(element);
+                    if (vacancy != null)
+                    {
+                        vacancies.Add(vacancy);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error parsing vacancy element in test mode");
+                }
+            }
+
+            _logger.LogInformation("Test scraping completed. Returning {Count} vacancies", vacancies.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during test scraping");
+            _logger.LogError(ex, "Error during test scraping with Selenium");
             throw;
         }
+        finally
+        {
+            try
+            {
+                driver?.Quit();
+                _logger.LogInformation("Chrome driver closed (test mode)");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error closing Chrome driver in test mode");
+            }
+        }
+
+        return vacancies;
     }
 
     private async Task<List<Vacancy>> GetVacanciesFromCategoryAsync(string category, CancellationToken cancellationToken)
@@ -305,7 +349,6 @@ public class VacancyScrapingService : IVacancyScrapingService
             vacancy.Location = WebUtility.HtmlDecode(locationNode.InnerText?.Trim() ?? string.Empty);
         }
 
-        // Парсинг дати публікації
         var dateNode = element.SelectSingleNode(".//div[contains(@class, 'date')]");
         if (dateNode != null)
         {
@@ -401,7 +444,6 @@ public class VacancyScrapingService : IVacancyScrapingService
     {
         var currentYear = DateTime.Now.Year;
         
-        // Словник українських місяців
         var monthsUkr = new Dictionary<string, int>
         {
             {"січня", 1}, {"лютого", 2}, {"березня", 3}, {"квітня", 4},
@@ -411,7 +453,6 @@ public class VacancyScrapingService : IVacancyScrapingService
 
         try
         {
-            // Формат: "13 вересня" або "сьогодні" або "вчора"
             if (dateText.Contains("сьогодні"))
             {
                 vacancy.PublishedDate = DateTime.Today;
@@ -430,7 +471,6 @@ public class VacancyScrapingService : IVacancyScrapingService
                     {
                         vacancy.PublishedDate = new DateTime(currentYear, month, day);
                         
-                        // Якщо дата в майбутньому, то це минулий рік
                         if (vacancy.PublishedDate > DateTime.Today)
                         {
                             vacancy.PublishedDate = vacancy.PublishedDate.AddYears(-1);

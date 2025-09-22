@@ -45,7 +45,12 @@ builder.Services.AddSingleton<OpenAIClient>(provider =>
 builder.Services.AddScoped<IVacancyScrapingService, VacancyScrapingService>();
 builder.Services.AddScoped<IVacancyAnalysisService, VacancyAnalysisService>();
 
-builder.Services.AddSignalR();
+builder.Services.AddSignalR()
+    .AddJsonProtocol(options =>
+    {
+        options.PayloadSerializerOptions.PropertyNamingPolicy = null; // Зберігає оригінальні назви властивостей
+    });
+
 builder.Services.AddControllersWithViews();
 
 var app = builder.Build();
