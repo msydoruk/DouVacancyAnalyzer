@@ -293,10 +293,10 @@ function displayResults(data) {
     }
 
     try {
-        displayQuickSummary(Report, TechStats);
+        displayQuickSummary(Report, AiStats);
         displayAnalysisStats(Report);
         displayTechStats(TechStats);
-        displayModernTech(TechStats);
+        displayModernTech(AiStats);
         displayVacancies(Report.Matches || []);
         displayCharts(TechStats, AiStats || {});
         console.log('All display functions completed successfully');
@@ -305,22 +305,22 @@ function displayResults(data) {
     }
 }
 
-function displayQuickSummary(report, techStats) {
-    console.log('displayQuickSummary called with report:', report, 'techStats:', techStats);
+function displayQuickSummary(report, aiStats) {
+    console.log('displayQuickSummary called with report:', report, 'aiStats:', aiStats);
 
     if (!report) {
         console.error('Report is null or undefined in displayQuickSummary');
         return;
     }
 
-    if (!techStats) {
-        console.error('TechStats is null or undefined in displayQuickSummary');
+    if (!aiStats) {
+        console.error('AiStats is null or undefined in displayQuickSummary');
         return;
     }
 
     const container = document.getElementById('quickSummary');
     const matchPercentage = (report && typeof report.MatchPercentage === 'number') ? report.MatchPercentage : 0;
-    const modernPercentage = (techStats && techStats.Total > 0) ? ((techStats.WithModernTech / techStats.Total) * 100).toFixed(1) : 0;
+    const modernPercentage = (aiStats && aiStats.Total > 0) ? ((aiStats.WithModernTech / aiStats.Total) * 100).toFixed(1) : 0;
 
     container.innerHTML = `
         <div class="col-md-3 text-center">
@@ -498,31 +498,65 @@ function displayTechStats(techStats) {
     `;
 }
 
-function displayModernTech(techStats) {
-    console.log('displayModernTech called with techStats:', techStats);
+function displayModernTech(aiStats) {
+    console.log('displayModernTech called with aiStats:', aiStats);
 
     const container = document.getElementById('modernTech');
-    const modernTechCount = techStats.ModernTechCount || {};
-    const topTech = Object.entries(modernTechCount)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 15);
+    const modernVacancies = aiStats.ModernVacancies || [];
 
-    if (topTech.length === 0) {
-        container.innerHTML = '<div class="text-center text-muted py-4"><i class="fas fa-info-circle fa-2x mb-2"></i><p>No modern technology data available</p></div>';
+    if (modernVacancies.length === 0) {
+        container.innerHTML = '<div class="text-center text-muted py-4"><i class="fas fa-info-circle fa-2x mb-2"></i><p>No modern vacancies found</p></div>';
         return;
     }
 
     container.innerHTML = `
-        <div class="row g-2">
-            ${topTech.map(([tech, count]) => `
-                <div class="col-md-4 col-sm-6">
-                    <div class="badge bg-primary p-3 d-flex justify-content-between align-items-center w-100">
-                        <span class="fw-bold">${tech}</span>
-                        <span class="badge bg-light text-dark">${count}</span>
-                    </div>
-                </div>
-            `).join('')}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="thead-light">
+                    <tr>
+                        <th>Job Title</th>
+                        <th>Company</th>
+                        <th>Location</th>
+                        <th>Technologies</th>
+                        <th>Score</th>
+                        <th>Link</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${modernVacancies.slice(0, 10).map(match => `
+                        <tr>
+                            <td>
+                                <strong>${match.Vacancy.Title}</strong>
+                                <br><small class="text-muted">${match.Vacancy.Experience || 'Not specified'}</small>
+                            </td>
+                            <td>${match.Vacancy.Company}</td>
+                            <td>${match.Vacancy.Location}</td>
+                            <td>
+                                ${(match.Analysis.DetectedTechnologies || []).slice(0, 3).map(tech =>
+                                    `<span class="badge bg-primary me-1">${tech}</span>`
+                                ).join('')}
+                                ${(match.Analysis.DetectedTechnologies || []).length > 3 ?
+                                    `<span class="text-muted">+${(match.Analysis.DetectedTechnologies || []).length - 3} more</span>` : ''
+                                }
+                            </td>
+                            <td>
+                                <span class="badge bg-success">${match.Analysis.MatchScore || 0}</span>
+                            </td>
+                            <td>
+                                <a href="${match.Vacancy.Link}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-external-link-alt"></i>
+                                </a>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
         </div>
+        ${modernVacancies.length > 10 ? `
+            <div class="text-center mt-3">
+                <small class="text-muted">Showing top 10 of ${modernVacancies.length} modern vacancies</small>
+            </div>
+        ` : ''}
     `;
 }
 
@@ -575,10 +609,10 @@ function displayCharts(techStats, aiStats) {
             labels: ['Junior', 'Middle', 'Senior', 'Не вказано'],
             datasets: [{
                 data: [
-                    techStats.JuniorLevel,
-                    techStats.MiddleLevel,
-                    techStats.SeniorLevel,
-                    techStats.UnspecifiedLevel
+                    aiStats.JuniorLevel || 0,
+                    aiStats.MiddleLevel || 0,
+                    aiStats.SeniorLevel || 0,
+                    aiStats.UnspecifiedLevel || 0
                 ],
                 backgroundColor: [
                     '#28a745',

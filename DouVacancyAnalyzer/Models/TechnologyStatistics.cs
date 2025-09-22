@@ -22,4 +22,6 @@ public class TechnologyStatistics
     public Dictionary<string, int> YearsRequirements { get; set; } = new();
 
     public Dictionary<string, int> VacancyCategories { get; set; } = new();
+
+    public List<VacancyMatch> ModernVacancies { get; set; } = new();
 }
