@@ -115,7 +115,9 @@ public class VacancyEntity
             Location = vacancy.Location,
             Technologies = technologies,
             EnglishLevel = vacancy.EnglishLevel,
-            ContentHash = contentHash
+            ContentHash = contentHash,
+            CreatedAt = DateTime.UtcNow,
+            IsNew = true
         };
     }
 

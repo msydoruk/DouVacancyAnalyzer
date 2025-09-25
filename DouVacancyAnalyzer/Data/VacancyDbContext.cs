@@ -27,8 +27,8 @@ public class VacancyDbContext : DbContext
             entity.Property(e => e.DetectedTechnologies).HasColumnType("TEXT");
             entity.Property(e => e.AnalysisReason).HasColumnType("TEXT");
 
-            // Create index for content hash for fast duplicate detection
-            entity.HasIndex(e => e.ContentHash).IsUnique();
+            // Create unique index for URL for fast duplicate detection
+            entity.HasIndex(e => e.Url).IsUnique();
 
             // Create index for new vacancy detection
             entity.HasIndex(e => e.IsNew);

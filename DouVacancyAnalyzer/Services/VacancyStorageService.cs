@@ -32,10 +32,10 @@ public class VacancyStorageService : IVacancyStorageService
             .ToListAsync();
     }
 
-    public async Task<VacancyEntity?> GetVacancyByHashAsync(string contentHash)
+    public async Task<VacancyEntity?> GetVacancyByUrlAsync(string url)
     {
         return await _context.Vacancies
-            .FirstOrDefaultAsync(v => v.ContentHash == contentHash);
+            .FirstOrDefaultAsync(v => v.Url == url);
     }
 
     public async Task<List<VacancyEntity>> SaveVacanciesAsync(List<Vacancy> vacancies)
@@ -46,18 +46,51 @@ public class VacancyStorageService : IVacancyStorageService
         foreach (var vacancy in vacancies)
         {
             var entity = VacancyEntity.FromVacancy(vacancy);
-            var existing = await GetVacancyByHashAsync(entity.ContentHash);
 
-            _logger.LogInformation("Processing vacancy: {Title} | Hash: {Hash}",
-                vacancy.Title, entity.ContentHash[..8] + "...");
+            _logger.LogInformation("Processing vacancy: {Title} | URL: {Url}",
+                vacancy.Title, vacancy.Url);
+
+            var existing = await GetVacancyByUrlAsync(vacancy.Url);
+            _logger.LogInformation("URL lookup result: {Found}",
+                existing != null ? "FOUND" : "NOT FOUND");
 
             if (existing == null)
             {
-                _context.Vacancies.Add(entity);
-                savedVacancies.Add(entity);
-                newVacancyCount++;
-                _logger.LogInformation("✅ NEW vacancy added: {Title} at {Company} | Hash: {Hash}",
-                    vacancy.Title, vacancy.Company, entity.ContentHash[..12] + "...");
+                try
+                {
+                    _context.Vacancies.Add(entity);
+                    await _context.SaveChangesAsync(); // Save immediately
+                    savedVacancies.Add(entity);
+                    newVacancyCount++;
+                    _logger.LogInformation("✅ NEW vacancy saved: {Title} at {Company}",
+                        vacancy.Title, vacancy.Company);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error saving new vacancy: {Title} | URL: {Url}",
+                        vacancy.Title, vacancy.Url);
+
+                    // Remove from context to prevent issues
+                    _context.Entry(entity).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
+
+                    // Try to get existing again in case it was added in parallel
+                    var existingRetry = await GetVacancyByUrlAsync(vacancy.Url);
+                    if (existingRetry != null)
+                    {
+                        _logger.LogWarning("Found existing vacancy on retry: {Title} | ID: {Id}",
+                            vacancy.Title, existingRetry.Id);
+                        existingRetry.PublishedDate = vacancy.PublishedDate;
+                        existingRetry.Salary = vacancy.Salary;
+                        existingRetry.IsRemote = vacancy.IsRemote;
+                        existingRetry.IsNew = false;
+                        await _context.SaveChangesAsync();
+                        savedVacancies.Add(existingRetry);
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
             }
             else
             {
@@ -66,18 +99,15 @@ public class VacancyStorageService : IVacancyStorageService
                 existing.Salary = vacancy.Salary;
                 existing.IsRemote = vacancy.IsRemote;
                 existing.IsNew = false; // Mark as not new since it already existed
+                await _context.SaveChangesAsync();
                 savedVacancies.Add(existing);
                 _logger.LogInformation("🔄 EXISTING vacancy updated: {Title} at {Company} | ID: {Id}",
                     vacancy.Title, vacancy.Company, existing.Id);
             }
         }
 
-        if (newVacancyCount > 0)
-        {
-            await _context.SaveChangesAsync();
-            _logger.LogInformation("Saved {NewCount} new vacancies out of {TotalCount} processed",
-                newVacancyCount, vacancies.Count);
-        }
+        _logger.LogInformation("Processed {TotalCount} vacancies: {NewCount} new, {ExistingCount} existing",
+            vacancies.Count, newVacancyCount, vacancies.Count - newVacancyCount);
 
         return savedVacancies;
     }

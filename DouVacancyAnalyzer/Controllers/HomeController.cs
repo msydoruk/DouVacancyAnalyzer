@@ -126,6 +126,16 @@ public class HomeController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "❌ Error during test analysis");
+            _logger.LogError("Exception Type: {ExceptionType}", ex.GetType().Name);
+            _logger.LogError("Exception Message: {Message}", ex.Message);
+            if (ex.InnerException != null)
+            {
+                _logger.LogError("Inner Exception Type: {InnerExceptionType}", ex.InnerException.GetType().Name);
+                _logger.LogError("Inner Exception Message: {InnerMessage}", ex.InnerException.Message);
+                _logger.LogError("Inner Exception Stack: {InnerStack}", ex.InnerException.StackTrace);
+            }
+            _logger.LogError("Full Stack Trace: {StackTrace}", ex.StackTrace);
+
             await _hubContext.Clients.All.SendAsync("AnalysisError", ex.Message);
             return Json(new { success = false, error = ex.Message });
         }
