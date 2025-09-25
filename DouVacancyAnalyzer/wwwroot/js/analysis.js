@@ -5,6 +5,7 @@ const connection = new signalR.HubConnectionBuilder()
 const startButton = document.getElementById('startAnalysis');
 const startTestButton = document.getElementById('startTestAnalysis');
 const cancelButton = document.getElementById('cancelAnalysis');
+const clearDatabaseButton = document.getElementById('clearDatabase');
 const progressSection = document.getElementById('progressSection');
 const resultsSection = document.getElementById('resultsSection');
 const progressBar = document.getElementById('progressBar');
@@ -22,8 +23,19 @@ let analysisController = null;
 function normalizeDataKeys(data) {
     if (!data) return null;
 
+    let report = data.Report || data.report;
+    if (report) {
+        // Normalize the report structure
+        report = {
+            TotalVacancies: report.TotalVacancies || report.totalVacancies,
+            MatchingVacancies: report.MatchingVacancies || report.matchingVacancies,
+            MatchPercentage: report.MatchPercentage || report.matchPercentage,
+            Matches: report.Matches || report.matches || []
+        };
+    }
+
     return {
-        Report: data.Report || data.report,
+        Report: report,
         TechStats: data.TechStats || data.techStats,
         AiStats: data.AiStats || data.aiStats
     };
@@ -48,6 +60,12 @@ cancelButton.addEventListener('click', function() {
     if (analysisController) {
         analysisController.abort();
         cancelAnalysis();
+    }
+});
+
+clearDatabaseButton.addEventListener('click', function() {
+    if (confirm('Are you sure you want to clear the database? This will remove all stored vacancies and analysis results.')) {
+        clearDatabase();
     }
 });
 
@@ -293,10 +311,17 @@ function displayResults(data) {
     }
 
     try {
+        // Show the results section
+        const resultsSection = document.getElementById('resultsSection');
+        if (resultsSection) {
+            resultsSection.style.display = 'block';
+            console.log('Results section shown');
+        }
+
         displayQuickSummary(Report, AiStats);
         displayAnalysisStats(Report);
         displayTechStats(TechStats);
-        displayModernTech(AiStats);
+        displayModernTech(AiStats, Report);
         displayVacancies(Report.Matches || []);
         displayCharts(TechStats, AiStats || {});
         console.log('All display functions completed successfully');
@@ -360,6 +385,13 @@ function displayAnalysisStats(report) {
     const acceptableEnglishCount = matches.filter(m => m.Analysis && m.Analysis.HasAcceptableEnglish === true).length;
     const noTimeTrackerCount = matches.filter(m => m.Analysis && m.Analysis.HasNoTimeTracker !== false).length;
 
+    console.log('Analysis Stats Counts:');
+    console.log('- Total matches:', matches.length);
+    console.log('- Modern Stack (AI):', modernStackCount);
+    console.log('- Middle Level:', middleLevelCount);
+    console.log('- Acceptable English:', acceptableEnglishCount);
+    console.log('- No Time Tracker:', noTimeTrackerCount);
+
     container.innerHTML = `
         <div class="row g-3">
             <div class="col-md-6">
@@ -402,7 +434,7 @@ function displayAnalysisStats(report) {
                     </div>
                     <div class="flex-grow-1 ms-3">
                         <h4 class="mb-0">${modernStackCount}</h4>
-                        <small class="text-muted">Modern Stack</small>
+                        <small class="text-muted">Modern Stack (AI)</small>
                     </div>
                 </div>
             </div>
@@ -446,7 +478,7 @@ function displayTechStats(techStats) {
                     </div>
                     <div class="flex-grow-1 ms-3">
                         <h4 class="mb-0">${techStats.WithModernTech || 0}</h4>
-                        <small class="text-muted">Modern Technologies</small>
+                        <small class="text-muted">Modern Tech (Keyword)</small>
                     </div>
                 </div>
             </div>
@@ -498,14 +530,24 @@ function displayTechStats(techStats) {
     `;
 }
 
-function displayModernTech(aiStats) {
+function displayModernTech(aiStats, report) {
     console.log('displayModernTech called with aiStats:', aiStats);
+    console.log('report.Matches count:', (report.Matches || []).length);
 
     const container = document.getElementById('modernTech');
-    const modernVacancies = aiStats.ModernVacancies || [];
+    // Use actual matches with modern stack instead of aiStats.ModernVacancies
+    const matches = report.Matches || [];
+    const modernVacancies = matches.filter(m => m.Analysis && m.Analysis.IsModernStack);
+
+    console.log('All matches:', matches.map(m => ({
+        title: m.Vacancy?.Title,
+        isModernStack: m.Analysis?.IsModernStack,
+        matchScore: m.Analysis?.MatchScore
+    })));
+    console.log('Modern stack vacancies found:', modernVacancies.length);
 
     if (modernVacancies.length === 0) {
-        container.innerHTML = '<div class="text-center text-muted py-4"><i class="fas fa-info-circle fa-2x mb-2"></i><p>No modern vacancies found</p></div>';
+        container.innerHTML = '<div class="text-center text-muted py-4"><i class="fas fa-info-circle fa-2x mb-2"></i><p>No modern stack vacancies found in matches</p></div>';
         return;
     }
 
@@ -573,22 +615,26 @@ function displayVacancies(matches) {
     }
 
     tbody.innerHTML = top20.map((match, index) => {
-        const vacancy = match.Vacancy || {};
-        const analysis = match.Analysis || {};
-        const score = (analysis.MatchScore || 0).toFixed(0);
+        // Try both upper and lower case keys for compatibility
+        const vacancy = match.Vacancy || match.vacancy || {};
+        const analysis = match.Analysis || match.analysis || {};
+
+        console.log(`Processing match ${index + 1}:`, match);
+
+        const score = (analysis.MatchScore || analysis.matchScore || 0).toFixed(0);
         const scoreClass = score >= 80 ? 'text-success' : score >= 60 ? 'text-warning' : 'text-danger';
 
         return `
             <tr class="align-middle">
                 <td><span class="badge bg-secondary">${index + 1}</span></td>
-                <td class="fw-bold">${vacancy.Title || 'Not specified'}</td>
-                <td>${vacancy.Company || 'Not specified'}</td>
-                <td><i class="fas fa-map-marker-alt text-muted me-1"></i>${vacancy.Location || 'Not specified'}</td>
-                <td><span class="badge bg-info">${vacancy.Experience || 'Not specified'}</span></td>
-                <td><span class="badge bg-success">${vacancy.EnglishLevel || 'Not specified'}</span></td>
+                <td class="fw-bold">${vacancy.Title || vacancy.title || 'Not specified'}</td>
+                <td>${vacancy.Company || vacancy.company || 'Not specified'}</td>
+                <td><i class="fas fa-map-marker-alt text-muted me-1"></i>${vacancy.Location || vacancy.location || 'Not specified'}</td>
+                <td><span class="badge bg-info">${vacancy.Experience || vacancy.experience || 'Not specified'}</span></td>
+                <td><span class="badge bg-success">${vacancy.EnglishLevel || vacancy.englishLevel || 'Not specified'}</span></td>
                 <td><span class="fw-bold ${scoreClass}">${score}%</span></td>
                 <td>
-                    <a href="${vacancy.Url || '#'}" target="_blank" class="btn btn-outline-primary btn-sm">
+                    <a href="${vacancy.Url || vacancy.url || '#'}" target="_blank" class="btn btn-outline-primary btn-sm">
                         <i class="fas fa-external-link-alt me-1"></i>View
                     </a>
                 </td>
@@ -673,3 +719,136 @@ function displayCharts(techStats, aiStats) {
         });
     }
 }
+
+// Database management functionality
+
+// Load stored analysis on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadStoredAnalysisIfAvailable();
+});
+
+
+
+
+function loadStoredAnalysisIfAvailable() {
+    // Check if there are any analyzed vacancies in the database
+    fetch('/Home/GetDatabaseStats')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.totalVacancies > 0) {
+                console.log('Found stored vacancies, loading analysis automatically...');
+                loadStoredAnalysis(false); // false = don't show loading UI
+            } else {
+                console.log('No stored vacancies found');
+            }
+        })
+        .catch(error => {
+            console.error('Error checking for stored analysis:', error);
+        });
+}
+
+function loadStoredAnalysis(showLoadingUI = true) {
+    if (showLoadingUI) {
+        startButton.disabled = true;
+        startTestButton.disabled = true;
+    }
+
+    fetch('/Home/GetStoredAnalysis')
+        .then(response => response.json())
+        .then(data => {
+            console.log('loadStoredAnalysis API response:', data);
+
+            if (data.success) {
+                console.log('About to call displayResults with:', data.data);
+
+                // Normalize the data structure for compatibility
+                const normalizedData = normalizeDataKeys(data.data);
+                console.log('Normalized data for display:', normalizedData);
+
+                displayResults(normalizedData);
+
+                // Show notification about new vacancies if any
+                if (data.data.HasNewVacancies) {
+                    const newCount = data.data.DatabaseStats.newCount;
+                    if (showLoadingUI) { // Only show notification if user manually requested
+                        showNotification(`Found ${newCount} new vacancies since last analysis!`, 'info');
+                    }
+                }
+
+                // Show quiet notification on auto-load
+                if (!showLoadingUI && data.data.Report && data.data.Report.totalVacancies > 0) {
+                    console.log(`Auto-loaded analysis with ${data.data.Report.totalVacancies} total vacancies`);
+                }
+            } else {
+                console.error('API Error:', data.error);
+                if (showLoadingUI) {
+                    showNotification('Error loading stored analysis: ' + data.error, 'error');
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error loading stored analysis:', error);
+            if (showLoadingUI) {
+                showNotification('Error loading stored analysis', 'error');
+            }
+        })
+        .finally(() => {
+            if (showLoadingUI) {
+                startButton.disabled = false;
+                startTestButton.disabled = false;
+            }
+        });
+}
+
+function clearDatabase() {
+    clearDatabaseButton.disabled = true;
+    clearDatabaseButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Clearing...';
+
+    fetch('/Home/ClearDatabase', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Database cleared successfully', 'success');
+            resultsSection.style.display = 'none';
+        } else {
+            showNotification('Error: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error clearing database:', error);
+        showNotification('Error clearing database', 'error');
+    })
+    .finally(() => {
+        clearDatabaseButton.disabled = false;
+        clearDatabaseButton.innerHTML = '<i class="fas fa-trash me-2"></i>Clear Database';
+    });
+}
+
+function showNotification(message, type) {
+    const alertClass = type === 'error' ? 'alert-danger' :
+                      type === 'success' ? 'alert-success' : 'alert-info';
+
+    const notification = document.createElement('div');
+    notification.className = `alert ${alertClass} alert-dismissible fade show position-fixed`;
+    notification.style.top = '20px';
+    notification.style.right = '20px';
+    notification.style.zIndex = '9999';
+    notification.style.maxWidth = '400px';
+
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+
+    document.body.appendChild(notification);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 5000);
+}
+

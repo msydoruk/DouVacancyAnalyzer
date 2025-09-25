@@ -1,10 +1,12 @@
 using DouVacancyAnalyzer.Hubs;
 using DouVacancyAnalyzer.Models;
 using DouVacancyAnalyzer.Services;
+using DouVacancyAnalyzer.Data;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Localization;
+using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using OpenAI;
 
@@ -14,6 +16,10 @@ builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnC
 
 builder.Services.Configure<OpenAiSettings>(builder.Configuration.GetSection("OpenAiSettings"));
 builder.Services.Configure<ScrapingSettings>(builder.Configuration.GetSection("ScrapingSettings"));
+
+// Add Entity Framework
+builder.Services.AddDbContext<VacancyDbContext>(options =>
+    options.UseSqlite("Data Source=vacancies.db"));
 
 builder.Services.AddLocalization();
 
@@ -44,6 +50,7 @@ builder.Services.AddSingleton<OpenAIClient>(provider =>
 
 builder.Services.AddScoped<IVacancyScrapingService, VacancyScrapingService>();
 builder.Services.AddScoped<IVacancyAnalysisService, VacancyAnalysisService>();
+builder.Services.AddScoped<IVacancyStorageService, VacancyStorageService>();
 
 builder.Services.AddSignalR()
     .AddJsonProtocol(options =>
@@ -75,5 +82,12 @@ app.MapControllerRoute(
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
 app.MapHub<AnalysisHub>("/analysishub");
+
+// Ensure database is created
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<VacancyDbContext>();
+    context.Database.EnsureCreated();
+}
 
 app.Run();
