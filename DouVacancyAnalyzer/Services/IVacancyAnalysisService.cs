@@ -12,6 +12,11 @@ public interface IVacancyAnalysisService
         List<Vacancy> vacancies,
         Func<string, int, Task> progressCallback,
         CancellationToken cancellationToken = default);
+
+    Task<(AnalysisReport report, List<VacancyAnalysisResult> allAnalyses, List<VacancyMatch> allMatches)> AnalyzeVacanciesOptimizedAsync(
+        List<Vacancy> vacancies,
+        Func<string, int, Task> progressCallback,
+        CancellationToken cancellationToken = default);
 }
 
 

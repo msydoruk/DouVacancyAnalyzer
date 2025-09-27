@@ -476,6 +476,151 @@ public class VacancyAnalysisService : IVacancyAnalysisService
         }
     }
 
+    public async Task<(AnalysisReport report, List<VacancyAnalysisResult> allAnalyses, List<VacancyMatch> allMatches)> AnalyzeVacanciesOptimizedAsync(
+        List<Vacancy> vacancies,
+        Func<string, int, Task> progressCallback,
+        CancellationToken cancellationToken = default)
+    {
+        var totalVacancies = vacancies.Count;
+        _logger.LogInformation("🚀 Starting optimized parallel analysis of {Count} vacancies", totalVacancies);
+
+        // Create semaphore to limit concurrent API calls (avoid rate limits)
+        var maxConcurrency = Math.Min(3, Math.Max(1, totalVacancies / 5)); // Max 3 concurrent, adaptive based on count
+        using var semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
+
+        var allMatches = new List<VacancyMatch>();
+        var allAnalyses = new List<VacancyAnalysisResult>();
+        var matches = new List<VacancyMatch>();
+        var processedCount = 0;
+        var lockObject = new object();
+
+        await progressCallback("🔄 Starting parallel analysis...", 30);
+
+        // Process vacancies in parallel with rate limiting
+        var tasks = vacancies.Select(async (vacancy, index) =>
+        {
+            await semaphore.WaitAsync(cancellationToken);
+            try
+            {
+                var truncatedTitle = vacancy.Title.Length > 50
+                    ? vacancy.Title.Substring(0, 47) + "..."
+                    : vacancy.Title;
+
+                _logger.LogInformation("🤖 Analyzing vacancy {Index}/{Total}: {Title}",
+                    index + 1, totalVacancies, truncatedTitle);
+
+                try
+                {
+                    var analysis = await AnalyzeVacancyAsync(vacancy, cancellationToken);
+
+                    // Save to database in background (non-blocking)
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var contentHash = GenerateContentHash(vacancy);
+                            var dbVacancy = await _dbContext.Vacancies
+                                .FirstOrDefaultAsync(v => v.ContentHash == contentHash, cancellationToken);
+
+                            if (dbVacancy != null)
+                            {
+                                await UpdateVacancyAnalysisInDb(dbVacancy, analysis);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to save analysis for {Title}", vacancy.Title);
+                        }
+                    }, cancellationToken);
+
+                    var match = new VacancyMatch
+                    {
+                        Vacancy = vacancy,
+                        Analysis = analysis
+                    };
+
+                    // Thread-safe operations
+                    lock (lockObject)
+                    {
+                        allAnalyses.Add(analysis);
+                        allMatches.Add(match);
+
+                        if (IsVacancyMatch(analysis))
+                        {
+                            matches.Add(match);
+                        }
+
+                        processedCount++;
+                        var progressPercent = 30 + (int)((processedCount / (double)totalVacancies) * 30);
+
+                        // Update progress every few items
+                        if (processedCount % Math.Max(1, totalVacancies / 20) == 0 || processedCount == totalVacancies)
+                        {
+                            _ = progressCallback($"🤖 Analyzed {processedCount}/{totalVacancies}: {truncatedTitle}", progressPercent);
+                        }
+                    }
+
+                    return match;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "❌ Failed to analyze vacancy {Index}/{Total}: {Title}",
+                        index + 1, totalVacancies, vacancy.Title);
+
+                    var fallbackAnalysis = new VacancyAnalysisResult
+                    {
+                        VacancyCategory = VacancyCategory.Other,
+                        DetectedExperienceLevel = ExperienceLevel.Unspecified,
+                        DetectedEnglishLevel = EnglishLevel.Unspecified,
+                        IsModernStack = false,
+                        IsMiddleLevel = false,
+                        HasAcceptableEnglish = false,
+                        HasNoTimeTracker = true,
+                        IsBackendSuitable = false,
+                        AnalysisReason = $"Analysis failed: {ex.Message}",
+                        MatchScore = 0,
+                        DetectedTechnologies = new List<string>()
+                    };
+
+                    var fallbackMatch = new VacancyMatch
+                    {
+                        Vacancy = vacancy,
+                        Analysis = fallbackAnalysis
+                    };
+
+                    lock (lockObject)
+                    {
+                        allAnalyses.Add(fallbackAnalysis);
+                        allMatches.Add(fallbackMatch);
+                        processedCount++;
+                    }
+
+                    return fallbackMatch;
+                }
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        // Wait for all tasks to complete
+        await Task.WhenAll(tasks);
+
+        _logger.LogInformation("✅ Parallel analysis completed: {Processed}/{Total} vacancies processed, {Matches} matches found",
+            processedCount, totalVacancies, matches.Count);
+
+        var report = new AnalysisReport
+        {
+            TotalVacancies = totalVacancies,
+            MatchingVacancies = matches.Count,
+            MatchPercentage = totalVacancies > 0 ? (matches.Count * 100.0) / totalVacancies : 0,
+            Matches = matches.OrderByDescending(m => m.Analysis.MatchScore).ToList()
+        };
+
+        return (report, allAnalyses, allMatches);
+    }
+
     public TechnologyStatistics GetAiTechnologyStatisticsFromAnalyses(List<VacancyAnalysisResult> analyses)
     {
         return GetAiTechnologyStatisticsFromAnalysesWithVacancies(analyses, new List<VacancyMatch>());

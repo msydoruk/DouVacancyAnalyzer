@@ -3,6 +3,7 @@ using System;
 using DouVacancyAnalyzer.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,51 +11,14 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DouVacancyAnalyzer.Migrations
 {
     [DbContext(typeof(VacancyDbContext))]
-    partial class VacancyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250926184317_AddVacancyResponseTable")]
+    partial class AddVacancyResponseTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.11");
-
-            modelBuilder.Entity("DouVacancyAnalyzer.Models.VacancyCountHistory", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("ActiveVacancies")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("CheckDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("DeactivatedVacancies")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<decimal>("MatchPercentage")
-                        .HasPrecision(5, 2)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("MatchingVacancies")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("NewVacancies")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("TotalVacancies")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CheckDate");
-
-                    b.ToTable("VacancyCountHistory");
-                });
 
             modelBuilder.Entity("DouVacancyAnalyzer.Models.VacancyEntity", b =>
                 {
@@ -103,9 +67,6 @@ namespace DouVacancyAnalyzer.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<bool?>("HasNoTimeTracker")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool?>("IsBackendSuitable")
@@ -159,14 +120,12 @@ namespace DouVacancyAnalyzer.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("IsActive");
-
                     b.HasIndex("IsNew");
 
                     b.HasIndex("Url")
                         .IsUnique();
 
-                    b.HasIndex("CreatedAt", "IsNew", "IsActive");
+                    b.HasIndex("CreatedAt", "IsNew");
 
                     b.ToTable("Vacancies");
                 });

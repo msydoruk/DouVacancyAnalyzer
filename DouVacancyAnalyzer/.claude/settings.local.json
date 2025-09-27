@@ -4,7 +4,11 @@
       "Bash(dotnet clean:*)",
       "Bash(dotnet build)",
       "Bash(dotnet run:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(sqlite3:*)",
+      "Bash(dotnet ef migrations add:*)",
+      "Bash(taskkill:*)",
+      "Bash(dotnet ef database:*)"
     ],
     "deny": [],
     "ask": []

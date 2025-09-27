@@ -40,6 +40,10 @@
                         <i class="fas fa-play me-2"></i>
                         @Localizer["StartAnalysis"]
                     </button>
+                    <button id="startOptimizedAnalysis" class="btn btn-success btn-lg">
+                        <i class="fas fa-rocket me-2"></i>
+                        Fast Analysis (Parallel)
+                    </button>
                     <button id="cancelAnalysis" class="btn btn-danger btn-lg" style="display: none;">
                         <i class="fas fa-stop me-2"></i>
                         Cancel
@@ -47,6 +51,10 @@
                     <button id="clearDatabase" class="btn btn-outline-danger btn-lg">
                         <i class="fas fa-trash me-2"></i>
                         Clear Database
+                    </button>
+                    <button id="debugAnalysis" class="btn btn-outline-info btn-lg">
+                        <i class="fas fa-bug me-2"></i>
+                        Debug Analysis
                     </button>
                 </div>
 
@@ -166,6 +174,39 @@
         </div>
     </div>
 
+    <div class="col-md-12 mb-4" id="newVacanciesSection" style="display: none;">
+        <div class="card border-0 shadow">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-star me-2"></i>
+                    New Vacancies (since last run)
+                </h5>
+            </div>
+            <div class="card-body p-4">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped" id="newVacancyTable">
+                        <thead class="thead-dark">
+                            <tr>
+                                <th>@Localizer["Number"]</th>
+                                <th>@Localizer["JobTitle"]</th>
+                                <th>@Localizer["Company"]</th>
+                                <th>@Localizer["Location"]</th>
+                                <th>@Localizer["Experience"]</th>
+                                <th>@Localizer["English"]</th>
+                                <th>Status</th>
+                                <th>@Localizer["Link"]</th>
+                                <th>Response Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="col-md-12 mb-4">
         <div class="card border-0 shadow">
             <div class="card-header bg-dark text-white">
@@ -175,6 +216,20 @@
                 </h5>
             </div>
             <div class="card-body p-4">
+                <div class="filter-buttons">
+                    <button id="filterAll" class="btn btn-outline-primary filter-btn">
+                        <i class="fas fa-list me-1"></i>
+                        All Vacancies
+                    </button>
+                    <button id="filterResponded" class="btn btn-outline-success filter-btn">
+                        <i class="fas fa-check me-1"></i>
+                        Responded
+                    </button>
+                    <button id="filterNotResponded" class="btn btn-outline-warning filter-btn">
+                        <i class="fas fa-clock me-1"></i>
+                        Not Responded
+                    </button>
+                </div>
                 <div class="table-responsive">
                     <table class="table table-hover table-striped" id="vacancyTable">
                         <thead class="thead-dark">
@@ -187,6 +242,7 @@
                                 <th>@Localizer["English"]</th>
                                 <th>@Localizer["Score"]</th>
                                 <th>@Localizer["Link"]</th>
+                                <th>Status</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -198,6 +254,49 @@
         </div>
     </div>
 </div>
+
+<style>
+    .vacancy-responded {
+        background-color: #e8f5e8 !important;
+        border-left: 4px solid #28a745;
+    }
+
+    .response-status-btn {
+        padding: 4px 8px;
+        font-size: 0.75rem;
+        border-radius: 12px;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .btn-respond {
+        background-color: #28a745;
+        color: white;
+    }
+
+    .btn-respond:hover {
+        background-color: #218838;
+    }
+
+    .btn-responded {
+        background-color: #6c757d;
+        color: white;
+    }
+
+    .btn-responded:hover {
+        background-color: #5a6268;
+    }
+
+    .filter-buttons {
+        margin-bottom: 15px;
+    }
+
+    .filter-btn {
+        margin-right: 10px;
+        margin-bottom: 5px;
+    }
+</style>
 
 @section Scripts {
     <script>

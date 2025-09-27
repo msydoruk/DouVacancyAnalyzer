@@ -27,7 +27,7 @@ public class VacancyStorageService : IVacancyStorageService
     public async Task<List<VacancyEntity>> GetNewVacanciesAsync()
     {
         return await _context.Vacancies
-            .Where(v => v.IsNew)
+            .Where(v => v.IsNew && v.IsActive)
             .OrderByDescending(v => v.CreatedAt)
             .ToListAsync();
     }
@@ -38,7 +38,7 @@ public class VacancyStorageService : IVacancyStorageService
             .FirstOrDefaultAsync(v => v.Url == url);
     }
 
-    public async Task<List<VacancyEntity>> SaveVacanciesAsync(List<Vacancy> vacancies)
+    public async Task<List<VacancyEntity>> SaveVacanciesAsync(List<Vacancy> vacancies, bool markOthersAsInactive = true)
     {
         var savedVacancies = new List<VacancyEntity>();
         var newVacancyCount = 0;
@@ -109,6 +109,20 @@ public class VacancyStorageService : IVacancyStorageService
         _logger.LogInformation("Processed {TotalCount} vacancies: {NewCount} new, {ExistingCount} existing",
             vacancies.Count, newVacancyCount, vacancies.Count - newVacancyCount);
 
+        // Mark vacancies not in current batch as inactive
+        if (markOthersAsInactive)
+        {
+            var currentUrls = vacancies.Select(v => v.Url).ToHashSet();
+            var deactivatedCount = await _context.Vacancies
+                .Where(v => v.IsActive && !currentUrls.Contains(v.Url))
+                .ExecuteUpdateAsync(v => v.SetProperty(x => x.IsActive, false));
+
+            if (deactivatedCount > 0)
+            {
+                _logger.LogInformation("🔴 Marked {Count} vacancies as inactive (no longer found)", deactivatedCount);
+            }
+        }
+
         return savedVacancies;
     }
 
@@ -172,7 +186,7 @@ public class VacancyStorageService : IVacancyStorageService
     public async Task<List<VacancyEntity>> GetVacanciesWithAnalysisAsync()
     {
         return await _context.Vacancies
-            .Where(v => v.LastAnalyzedAt != null)
+            .Where(v => v.LastAnalyzedAt != null && v.IsActive)
             .OrderByDescending(v => v.MatchScore)
             .ThenByDescending(v => v.CreatedAt)
             .ToListAsync();
@@ -206,5 +220,50 @@ public class VacancyStorageService : IVacancyStorageService
 
         await _context.SaveChangesAsync();
         _logger.LogInformation("Content hash recalculation completed");
+    }
+
+    public async Task<VacancyCountHistory> CreateVacancyCountHistoryAsync(
+        int totalVacancies, int activeVacancies, int newVacancies,
+        int deactivatedVacancies, int matchingVacancies, decimal matchPercentage)
+    {
+        var history = new VacancyCountHistory
+        {
+            CheckDate = DateTime.UtcNow,
+            TotalVacancies = totalVacancies,
+            ActiveVacancies = activeVacancies,
+            NewVacancies = newVacancies,
+            DeactivatedVacancies = deactivatedVacancies,
+            MatchingVacancies = matchingVacancies,
+            MatchPercentage = matchPercentage
+        };
+
+        _context.VacancyCountHistory.Add(history);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("📊 Created vacancy count history: Total={Total}, Active={Active}, New={New}, Deactivated={Deactivated}, Matching={Matching}",
+            totalVacancies, activeVacancies, newVacancies, deactivatedVacancies, matchingVacancies);
+
+        return history;
+    }
+
+    public async Task<List<VacancyCountHistory>> GetVacancyCountHistoryAsync(int limit = 30)
+    {
+        return await _context.VacancyCountHistory
+            .OrderByDescending(h => h.CheckDate)
+            .Take(limit)
+            .ToListAsync();
+    }
+
+    public async Task<List<VacancyEntity>> GetActiveVacanciesAsync()
+    {
+        return await _context.Vacancies
+            .Where(v => v.IsActive)
+            .OrderByDescending(v => v.CreatedAt)
+            .ToListAsync();
+    }
+
+    public async Task<int> GetActiveVacancyCountAsync()
+    {
+        return await _context.Vacancies.CountAsync(v => v.IsActive);
     }
 }

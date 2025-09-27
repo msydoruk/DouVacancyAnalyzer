@@ -63,6 +63,8 @@ public class VacancyEntity
 
     public bool IsNew { get; set; } = true;
 
+    public bool IsActive { get; set; } = true;
+
     // Hash for detecting duplicates
     public string ContentHash { get; set; } = string.Empty;
 

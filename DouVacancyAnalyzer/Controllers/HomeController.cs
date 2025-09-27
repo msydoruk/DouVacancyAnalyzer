@@ -1,11 +1,13 @@
 using DouVacancyAnalyzer.Hubs;
 using DouVacancyAnalyzer.Models;
 using DouVacancyAnalyzer.Services;
+using DouVacancyAnalyzer.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Localization;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
 namespace DouVacancyAnalyzer.Controllers;
@@ -19,6 +21,7 @@ public class HomeController : Controller
     private readonly ILogger<HomeController> _logger;
     private readonly ScrapingSettings _scrapingSettings;
     private readonly IStringLocalizer<ProgressMessages> _progressLocalizer;
+    private readonly VacancyDbContext _dbContext;
 
     public HomeController(
         IVacancyScrapingService scrapingService,
@@ -27,7 +30,8 @@ public class HomeController : Controller
         IHubContext<AnalysisHub> hubContext,
         ILogger<HomeController> logger,
         IOptions<ScrapingSettings> scrapingSettings,
-        IStringLocalizer<ProgressMessages> progressLocalizer)
+        IStringLocalizer<ProgressMessages> progressLocalizer,
+        VacancyDbContext dbContext)
     {
         _scrapingService = scrapingService;
         _analysisService = analysisService;
@@ -36,6 +40,7 @@ public class HomeController : Controller
         _logger = logger;
         _scrapingSettings = scrapingSettings.Value;
         _progressLocalizer = progressLocalizer;
+        _dbContext = dbContext;
     }
 
     public IActionResult Index()
@@ -136,6 +141,74 @@ public class HomeController : Controller
             }
             _logger.LogError("Full Stack Trace: {StackTrace}", ex.StackTrace);
 
+            await _hubContext.Clients.All.SendAsync("AnalysisError", ex.Message);
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> StartOptimizedAnalysis()
+    {
+        try
+        {
+            _logger.LogInformation("🚀 Starting OPTIMIZED ANALYSIS");
+            await _hubContext.Clients.All.SendAsync("AnalysisStarted");
+
+            await _hubContext.Clients.All.SendAsync("ProgressUpdate", _progressLocalizer["CollectingVacancies"].Value, 10);
+            var scrapedVacancies = await _scrapingService.GetVacanciesAsync();
+
+            // Save to database and detect new vacancies
+            await _hubContext.Clients.All.SendAsync("ProgressUpdate", "Saving to database...", 20);
+            var savedVacancies = await _storageService.SaveVacanciesAsync(scrapedVacancies);
+            var newVacancyCount = await _storageService.GetNewVacancyCountAsync();
+
+            await _hubContext.Clients.All.SendAsync("ProgressUpdate",
+                string.Format("Found {0} vacancies ({1} new)", scrapedVacancies.Count, newVacancyCount), 30);
+
+            // Get only unanalyzed vacancies for analysis
+            var unanalyzedVacancies = await _storageService.GetUnanalyzedVacanciesAsync();
+            var vacanciesForAnalysis = unanalyzedVacancies.Select(v => v.ToVacancy()).ToList();
+
+            if (vacanciesForAnalysis.Count == 0)
+            {
+                _logger.LogInformation("No new vacancies to analyze, loading existing results");
+                await _hubContext.Clients.All.SendAsync("ProgressUpdate", "No new vacancies to analyze, loading existing results...", 90);
+
+                // Load existing analysis results
+                var existingResults = await GetStoredAnalysisResults();
+                await _hubContext.Clients.All.SendAsync("AnalysisCompleted", (object)existingResults);
+                return Json(new { success = true });
+            }
+
+            // Use optimized parallel analysis
+            var (report, allAnalyses, allMatches) = await _analysisService.AnalyzeVacanciesOptimizedAsync(
+                vacanciesForAnalysis,
+                async (message, progress) => await _hubContext.Clients.All.SendAsync("ProgressUpdate", message, progress));
+
+            _logger.LogInformation("🚀 Optimized analysis completed: {Total} total, {Matching} matching ({Percentage:F1}%)",
+                report.TotalVacancies, report.MatchingVacancies, report.MatchPercentage);
+
+            await _hubContext.Clients.All.SendAsync("ProgressUpdate", _progressLocalizer["CalculatingStatistics"].Value, 60);
+
+            // Create combined report with all analyzed vacancies
+            var combinedReport = await GetStoredAnalysisResults();
+
+            await _hubContext.Clients.All.SendAsync("ProgressUpdate", _progressLocalizer["Completing"].Value, 100);
+
+            var result = new
+            {
+                Report = combinedReport.Report,
+                TechStats = combinedReport.TechStats,
+                AiStats = combinedReport.AiStats
+            };
+
+            await _hubContext.Clients.All.SendAsync("AnalysisCompleted", result);
+
+            return Json(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during optimized analysis");
             await _hubContext.Clients.All.SendAsync("AnalysisError", ex.Message);
             return Json(new { success = false, error = ex.Message });
         }
@@ -272,6 +345,77 @@ public class HomeController : Controller
     }
 
     [HttpGet]
+    public async Task<IActionResult> DebugStoredAnalysis()
+    {
+        try
+        {
+            var vacanciesWithAnalysis = await _storageService.GetVacanciesWithAnalysisAsync();
+            var totalCount = await _storageService.GetTotalVacancyCountAsync();
+            var newCount = await _storageService.GetNewVacancyCountAsync();
+
+            var debugInfo = new
+            {
+                TotalVacanciesInDb = totalCount,
+                NewVacanciesCount = newCount,
+                VacanciesWithAnalysisCount = vacanciesWithAnalysis.Count,
+                AnalyzedVacanciesCount = vacanciesWithAnalysis.Count(v => v.MatchScore.HasValue),
+                SampleVacancyAnalysis = vacanciesWithAnalysis.Take(3).Select(v => new
+                {
+                    Title = v.Title,
+                    Company = v.Company,
+                    MatchScore = v.MatchScore,
+                    IsModernStack = v.IsModernStack,
+                    IsMiddleLevel = v.IsMiddleLevel,
+                    HasAcceptableEnglish = v.HasAcceptableEnglish,
+                    HasNoTimeTracker = v.HasNoTimeTracker,
+                    IsBackendSuitable = v.IsBackendSuitable,
+                    VacancyCategory = v.VacancyCategory?.ToString(),
+                    DetectedExperienceLevel = v.DetectedExperienceLevel?.ToString(),
+                    DetectedEnglishLevel = v.DetectedEnglishLevel?.ToString(),
+                    DetectedTechnologies = v.DetectedTechnologies,
+                    AnalysisReason = v.AnalysisReason,
+                    LastAnalyzedAt = v.LastAnalyzedAt
+                }).ToList()
+            };
+
+            return Json(new { success = true, debug = debugInfo });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in debug endpoint");
+            return Json(new { success = false, error = ex.Message, stackTrace = ex.StackTrace });
+        }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetNewVacancies()
+    {
+        try
+        {
+            var newVacancies = await _storageService.GetNewVacanciesAsync();
+            var newVacanciesData = newVacancies.Select(v => new
+            {
+                Id = v.Id,
+                Title = v.Title,
+                Company = v.Company,
+                Location = v.Location,
+                Experience = v.Experience,
+                EnglishLevel = v.EnglishLevel,
+                Url = v.Url,
+                CreatedAt = v.CreatedAt,
+                IsAnalyzed = v.MatchScore.HasValue
+            }).ToList();
+
+            return Json(new { success = true, data = newVacanciesData });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting new vacancies");
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
+    [HttpGet]
     public async Task<IActionResult> GetStoredAnalysis()
     {
         try
@@ -281,25 +425,31 @@ public class HomeController : Controller
             var newCount = await _storageService.GetNewVacancyCountAsync();
 
             // Convert to VacancyMatch objects for compatibility with existing frontend
-            var matches = vacanciesWithAnalysis.Where(v => v.MatchScore.HasValue).Select(v => new VacancyMatch
+            var matches = vacanciesWithAnalysis.Where(v => v.MatchScore.HasValue).Select(v =>
             {
-                Vacancy = v.ToVacancy(),
-                Analysis = new VacancyAnalysisResult
+                _logger.LogInformation("Creating match for vacancy: {Title}, IsModernStack: {IsModernStack}, IsMiddleLevel: {IsMiddleLevel}",
+                    v.Title, v.IsModernStack, v.IsMiddleLevel);
+
+                return new VacancyMatch
                 {
-                    VacancyCategory = v.VacancyCategory ?? VacancyCategory.Other,
-                    DetectedExperienceLevel = v.DetectedExperienceLevel ?? ExperienceLevel.Unspecified,
-                    DetectedEnglishLevel = v.DetectedEnglishLevel ?? EnglishLevel.Unspecified,
-                    IsModernStack = v.IsModernStack,
-                    IsMiddleLevel = v.IsMiddleLevel,
-                    HasAcceptableEnglish = v.HasAcceptableEnglish,
-                    HasNoTimeTracker = v.HasNoTimeTracker,
-                    IsBackendSuitable = v.IsBackendSuitable,
-                    AnalysisReason = v.AnalysisReason ?? "",
-                    MatchScore = v.MatchScore ?? 0,
-                    DetectedTechnologies = string.IsNullOrEmpty(v.DetectedTechnologies)
-                        ? new List<string>()
-                        : System.Text.Json.JsonSerializer.Deserialize<List<string>>(v.DetectedTechnologies) ?? new List<string>()
-                }
+                    Vacancy = v.ToVacancy(),
+                    Analysis = new VacancyAnalysisResult
+                    {
+                        VacancyCategory = v.VacancyCategory ?? VacancyCategory.Other,
+                        DetectedExperienceLevel = v.DetectedExperienceLevel ?? ExperienceLevel.Unspecified,
+                        DetectedEnglishLevel = v.DetectedEnglishLevel ?? EnglishLevel.Unspecified,
+                        IsModernStack = v.IsModernStack,
+                        IsMiddleLevel = v.IsMiddleLevel,
+                        HasAcceptableEnglish = v.HasAcceptableEnglish,
+                        HasNoTimeTracker = v.HasNoTimeTracker,
+                        IsBackendSuitable = v.IsBackendSuitable,
+                        AnalysisReason = v.AnalysisReason ?? "",
+                        MatchScore = v.MatchScore ?? 0,
+                        DetectedTechnologies = string.IsNullOrEmpty(v.DetectedTechnologies)
+                            ? new List<string>()
+                            : System.Text.Json.JsonSerializer.Deserialize<List<string>>(v.DetectedTechnologies) ?? new List<string>()
+                    }
+                };
             }).ToList();
 
             // Use the same matching logic as the analysis service
@@ -313,10 +463,19 @@ public class HomeController : Controller
                 Matches = matchingVacancies.OrderByDescending(m => m.Analysis.MatchScore).ToList()
             };
 
-            // Create dummy TechStats for compatibility with existing UI
+            // Create AI stats from stored analysis
+            var analysisResults = matches.Select(m => m.Analysis).ToList();
+            var aiStats = _analysisService.GetAiTechnologyStatisticsFromAnalysesWithVacancies(analysisResults, matches);
+
+            // Create TechStats with real data from analysis results
             var techStats = new TechnologyStatistics
             {
                 Total = vacanciesWithAnalysis.Count,
+                WithModernTech = analysisResults.Count(a => a.DetectedTechnologies != null && a.DetectedTechnologies.Any()),
+                WithOutdatedTech = 0, // This would need specific outdated tech detection logic
+                WithDesktopApps = analysisResults.Count(a => a.VacancyCategory == VacancyCategory.Desktop),
+                WithFrontend = analysisResults.Count(a => a.VacancyCategory == VacancyCategory.Frontend),
+                WithTimeTracker = analysisResults.Count(a => a.HasNoTimeTracker == false),
                 ModernTechCount = new Dictionary<string, int>(),
                 OutdatedTechCount = new Dictionary<string, int>(),
                 DesktopKeywordCount = new Dictionary<string, int>(),
@@ -324,10 +483,6 @@ public class HomeController : Controller
                 YearsRequirements = new Dictionary<string, int>(),
                 VacancyCategories = new Dictionary<string, int>()
             };
-
-            // Create AI stats from stored analysis
-            var analysisResults = matches.Select(m => m.Analysis).ToList();
-            var aiStats = _analysisService.GetAiTechnologyStatisticsFromAnalysesWithVacancies(analysisResults, matches);
 
             var result = new
             {
@@ -354,25 +509,31 @@ public class HomeController : Controller
         var newCount = await _storageService.GetNewVacancyCountAsync();
 
         // Convert to VacancyMatch objects for compatibility with existing frontend
-        var matches = vacanciesWithAnalysis.Where(v => v.MatchScore.HasValue).Select(v => new VacancyMatch
+        var matches = vacanciesWithAnalysis.Where(v => v.MatchScore.HasValue).Select(v =>
         {
-            Vacancy = v.ToVacancy(),
-            Analysis = new VacancyAnalysisResult
+            _logger.LogInformation("Creating match for vacancy: {Title}, IsModernStack: {IsModernStack}, IsMiddleLevel: {IsMiddleLevel}",
+                v.Title, v.IsModernStack, v.IsMiddleLevel);
+
+            return new VacancyMatch
             {
-                VacancyCategory = v.VacancyCategory ?? VacancyCategory.Other,
-                DetectedExperienceLevel = v.DetectedExperienceLevel ?? ExperienceLevel.Unspecified,
-                DetectedEnglishLevel = v.DetectedEnglishLevel ?? EnglishLevel.Unspecified,
-                IsModernStack = v.IsModernStack,
-                IsMiddleLevel = v.IsMiddleLevel,
-                HasAcceptableEnglish = v.HasAcceptableEnglish,
-                HasNoTimeTracker = v.HasNoTimeTracker,
-                IsBackendSuitable = v.IsBackendSuitable,
-                AnalysisReason = v.AnalysisReason ?? "",
-                MatchScore = v.MatchScore ?? 0,
-                DetectedTechnologies = string.IsNullOrEmpty(v.DetectedTechnologies)
-                    ? new List<string>()
-                    : System.Text.Json.JsonSerializer.Deserialize<List<string>>(v.DetectedTechnologies) ?? new List<string>()
-            }
+                Vacancy = v.ToVacancy(),
+                Analysis = new VacancyAnalysisResult
+                {
+                    VacancyCategory = v.VacancyCategory ?? VacancyCategory.Other,
+                    DetectedExperienceLevel = v.DetectedExperienceLevel ?? ExperienceLevel.Unspecified,
+                    DetectedEnglishLevel = v.DetectedEnglishLevel ?? EnglishLevel.Unspecified,
+                    IsModernStack = v.IsModernStack,
+                    IsMiddleLevel = v.IsMiddleLevel,
+                    HasAcceptableEnglish = v.HasAcceptableEnglish,
+                    HasNoTimeTracker = v.HasNoTimeTracker,
+                    IsBackendSuitable = v.IsBackendSuitable,
+                    AnalysisReason = v.AnalysisReason ?? "",
+                    MatchScore = v.MatchScore ?? 0,
+                    DetectedTechnologies = string.IsNullOrEmpty(v.DetectedTechnologies)
+                        ? new List<string>()
+                        : System.Text.Json.JsonSerializer.Deserialize<List<string>>(v.DetectedTechnologies) ?? new List<string>()
+                }
+            };
         }).ToList();
 
         // Use the same matching logic as the analysis service
@@ -386,10 +547,19 @@ public class HomeController : Controller
             Matches = matchingVacancies.OrderByDescending(m => m.Analysis.MatchScore).ToList()
         };
 
-        // Create dummy TechStats for compatibility with existing UI
+        // Create AI stats from stored analysis
+        var analysisResults = matches.Select(m => m.Analysis).ToList();
+        var aiStats = _analysisService.GetAiTechnologyStatisticsFromAnalysesWithVacancies(analysisResults, matches);
+
+        // Create TechStats with real data from analysis results
         var techStats = new TechnologyStatistics
         {
             Total = vacanciesWithAnalysis.Count,
+            WithModernTech = analysisResults.Count(a => a.DetectedTechnologies != null && a.DetectedTechnologies.Any()),
+            WithOutdatedTech = 0, // This would need specific outdated tech detection logic
+            WithDesktopApps = analysisResults.Count(a => a.VacancyCategory == VacancyCategory.Desktop),
+            WithFrontend = analysisResults.Count(a => a.VacancyCategory == VacancyCategory.Frontend),
+            WithTimeTracker = analysisResults.Count(a => a.HasNoTimeTracker == false),
             ModernTechCount = new Dictionary<string, int>(),
             OutdatedTechCount = new Dictionary<string, int>(),
             DesktopKeywordCount = new Dictionary<string, int>(),
@@ -397,10 +567,6 @@ public class HomeController : Controller
             YearsRequirements = new Dictionary<string, int>(),
             VacancyCategories = new Dictionary<string, int>()
         };
-
-        // Create AI stats from stored analysis
-        var analysisResults = matches.Select(m => m.Analysis).ToList();
-        var aiStats = _analysisService.GetAiTechnologyStatisticsFromAnalysesWithVacancies(analysisResults, matches);
 
         return new
         {
@@ -450,4 +616,173 @@ public class HomeController : Controller
         return true;
     }
 
+    // ===== VACANCY RESPONSE STATUS API =====
+
+    [HttpPost]
+    public async Task<IActionResult> ToggleVacancyResponse([FromBody] VacancyResponseRequest request)
+    {
+        try
+        {
+            var existingResponse = await _dbContext.VacancyResponses
+                .FirstOrDefaultAsync(vr => vr.VacancyUrl == request.VacancyUrl);
+
+            if (existingResponse != null)
+            {
+                // Toggle the response status
+                existingResponse.HasResponded = !existingResponse.HasResponded;
+                existingResponse.ResponseDate = existingResponse.HasResponded ? DateTime.UtcNow : null;
+                existingResponse.UpdatedAt = DateTime.UtcNow;
+                existingResponse.Notes = request.Notes;
+            }
+            else
+            {
+                // Create new response record
+                var newResponse = new VacancyResponse
+                {
+                    VacancyUrl = request.VacancyUrl,
+                    VacancyTitle = request.VacancyTitle,
+                    CompanyName = request.CompanyName,
+                    HasResponded = true,
+                    ResponseDate = DateTime.UtcNow,
+                    Notes = request.Notes
+                };
+                _dbContext.VacancyResponses.Add(newResponse);
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            return Json(new {
+                success = true,
+                hasResponded = existingResponse?.HasResponded ?? true,
+                responseDate = existingResponse?.ResponseDate ?? DateTime.UtcNow
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error toggling vacancy response status for URL: {VacancyUrl}", request.VacancyUrl);
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetVacancyResponses()
+    {
+        try
+        {
+            var responses = await _dbContext.VacancyResponses
+                .OrderByDescending(vr => vr.ResponseDate)
+                .ToListAsync();
+
+            _logger.LogInformation("Found {Count} vacancy responses in database", responses.Count);
+
+            var responseData = responses.ToDictionary(
+                vr => vr.VacancyUrl,
+                vr => new
+                {
+                    vr.HasResponded,
+                    vr.ResponseDate,
+                    vr.Notes,
+                    vr.VacancyTitle,
+                    vr.CompanyName
+                }
+            );
+
+            _logger.LogInformation("Returning response data with {Count} entries", responseData.Count);
+            return Json(new { success = true, responses = responseData });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving vacancy responses");
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetVacancyCountHistory()
+    {
+        try
+        {
+            var history = await _storageService.GetVacancyCountHistoryAsync();
+
+            return Json(new
+            {
+                success = true,
+                history = history.Select(h => new
+                {
+                    h.CheckDate,
+                    h.TotalVacancies,
+                    h.ActiveVacancies,
+                    h.NewVacancies,
+                    h.DeactivatedVacancies,
+                    h.MatchingVacancies,
+                    h.MatchPercentage
+                }).ToList()
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving vacancy count history");
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> DebugVacancyResponses()
+    {
+        try
+        {
+            var responses = await _dbContext.VacancyResponses.ToListAsync();
+            var vacancies = await _dbContext.Vacancies.Select(v => new { v.Url, v.Title, v.Company }).Take(5).ToListAsync();
+
+            return Json(new
+            {
+                success = true,
+                responseCount = responses.Count,
+                vacancyCount = vacancies.Count,
+                responses = responses.Take(5).Select(r => new
+                {
+                    r.VacancyUrl,
+                    r.VacancyTitle,
+                    r.HasResponded,
+                    r.ResponseDate
+                }),
+                vacancies = vacancies
+            });
+        }
+        catch (Exception ex)
+        {
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetVacancyResponseStatus(string vacancyUrl)
+    {
+        try
+        {
+            var response = await _dbContext.VacancyResponses
+                .FirstOrDefaultAsync(vr => vr.VacancyUrl == vacancyUrl);
+
+            return Json(new
+            {
+                success = true,
+                hasResponded = response?.HasResponded ?? false,
+                responseDate = response?.ResponseDate,
+                notes = response?.Notes
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting vacancy response status for URL: {VacancyUrl}", vacancyUrl);
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+}
+
+public class VacancyResponseRequest
+{
+    public string VacancyUrl { get; set; } = string.Empty;
+    public string VacancyTitle { get; set; } = string.Empty;
+    public string CompanyName { get; set; } = string.Empty;
+    public string? Notes { get; set; }
 }
