@@ -8,12 +8,7 @@ public interface IVacancyAnalysisService
     TechnologyStatistics GetTechnologyStatistics(List<Vacancy> vacancies);
     TechnologyStatistics GetAiTechnologyStatisticsFromAnalyses(List<VacancyAnalysisResult> analyses);
     TechnologyStatistics GetAiTechnologyStatisticsFromAnalysesWithVacancies(List<VacancyAnalysisResult> analyses, List<VacancyMatch> allMatches);
-    Task<(AnalysisReport report, List<VacancyAnalysisResult> allAnalyses, List<VacancyMatch> allMatches)> AnalyzeVacanciesWithProgressAsync(
-        List<Vacancy> vacancies,
-        Func<string, int, Task> progressCallback,
-        CancellationToken cancellationToken = default);
-
-    Task<(AnalysisReport report, List<VacancyAnalysisResult> allAnalyses, List<VacancyMatch> allMatches)> AnalyzeVacanciesOptimizedAsync(
+    Task<(AnalysisReport report, List<VacancyAnalysisResult> allAnalyses, List<VacancyMatch> allMatches)> AnalyzeVacanciesAsync(
         List<Vacancy> vacancies,
         Func<string, int, Task> progressCallback,
         CancellationToken cancellationToken = default);

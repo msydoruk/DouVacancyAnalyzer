@@ -476,7 +476,7 @@ public class VacancyAnalysisService : IVacancyAnalysisService
         }
     }
 
-    public async Task<(AnalysisReport report, List<VacancyAnalysisResult> allAnalyses, List<VacancyMatch> allMatches)> AnalyzeVacanciesOptimizedAsync(
+    public async Task<(AnalysisReport report, List<VacancyAnalysisResult> allAnalyses, List<VacancyMatch> allMatches)> AnalyzeVacanciesAsync(
         List<Vacancy> vacancies,
         Func<string, int, Task> progressCallback,
         CancellationToken cancellationToken = default)
@@ -518,9 +518,8 @@ public class VacancyAnalysisService : IVacancyAnalysisService
                     {
                         try
                         {
-                            var contentHash = GenerateContentHash(vacancy);
                             var dbVacancy = await _dbContext.Vacancies
-                                .FirstOrDefaultAsync(v => v.ContentHash == contentHash, cancellationToken);
+                                .FirstOrDefaultAsync(v => v.Url == vacancy.Url, cancellationToken);
 
                             if (dbVacancy != null)
                             {
@@ -659,93 +658,6 @@ public class VacancyAnalysisService : IVacancyAnalysisService
         return stats;
     }
 
-    public async Task<(AnalysisReport report, List<VacancyAnalysisResult> allAnalyses, List<VacancyMatch> allMatches)> AnalyzeVacanciesWithProgressAsync(
-        List<Vacancy> vacancies,
-        Func<string, int, Task> progressCallback,
-        CancellationToken cancellationToken = default)
-    {
-        var matches = new List<VacancyMatch>();
-        var allMatches = new List<VacancyMatch>();
-        var allAnalyses = new List<VacancyAnalysisResult>();
-        var totalVacancies = vacancies.Count;
-
-        for (int i = 0; i < vacancies.Count; i++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var vacancy = vacancies[i];
-            var progressPercent = 30 + (int)((i / (double)totalVacancies) * 30);
-
-            var truncatedTitle = vacancy.Title.Length > 50
-                ? vacancy.Title.Substring(0, 47) + "..."
-                : vacancy.Title;
-
-            await progressCallback($"Analyzing vacancy {i + 1}/{totalVacancies}: {truncatedTitle}", progressPercent);
-
-            _logger.LogInformation("Analyzing vacancy {Index}/{Total}: {Title} at {Company}",
-                i + 1, totalVacancies, vacancy.Title, vacancy.Company);
-
-            try
-            {
-                var analysis = await AnalyzeVacancyAsync(vacancy, cancellationToken);
-                allAnalyses.Add(analysis);
-
-                // Save analysis results to database
-                var contentHash = GenerateContentHash(vacancy);
-                var dbVacancy = await _dbContext.Vacancies
-                    .FirstOrDefaultAsync(v => v.ContentHash == contentHash, cancellationToken);
-
-                if (dbVacancy != null)
-                {
-                    await UpdateVacancyAnalysisInDb(dbVacancy, analysis);
-                }
-
-                var vacancyMatch = new VacancyMatch
-                {
-                    Vacancy = vacancy,
-                    Analysis = analysis
-                };
-                allMatches.Add(vacancyMatch);
-
-                _logger.LogInformation("Vacancy analysis completed: {Title} - Category: {Category}, Score: {Score}, Match: {IsMatch}",
-                    vacancy.Title, analysis.VacancyCategory, analysis.MatchScore,
-                    (analysis.IsBackendSuitable ?? false) && (analysis.IsModernStack ?? false));
-
-                if (IsVacancyMatch(analysis))
-                {
-                    matches.Add(vacancyMatch);
-                    _logger.LogInformation("✅ Vacancy {Title} matched criteria!", vacancy.Title);
-                }
-                else
-                {
-                    _logger.LogInformation("❌ Vacancy {Title} did not match criteria: Backend={Backend}, Modern={Modern}, Middle={Middle}, English={English}, NoTracker={NoTracker}",
-                        vacancy.Title,
-                        analysis.IsBackendSuitable ?? false,
-                        analysis.IsModernStack ?? false,
-                        analysis.IsMiddleLevel ?? false,
-                        analysis.HasAcceptableEnglish ?? false,
-                        analysis.HasNoTimeTracker ?? true);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to analyze vacancy {Title}", vacancy.Title);
-            }
-        }
-
-        var report = new AnalysisReport
-        {
-            TotalVacancies = totalVacancies,
-            MatchingVacancies = matches.Count,
-            MatchPercentage = totalVacancies > 0 ? (matches.Count * 100.0) / totalVacancies : 0,
-            Matches = matches.OrderByDescending(m => m.Analysis.MatchScore).ToList()
-        };
-
-        _logger.LogInformation("📊 Analysis Summary: {Total} total vacancies, {Matching} matching, {Percentage:F1}% match rate",
-            report.TotalVacancies, report.MatchingVacancies, report.MatchPercentage);
-
-        return (report, allAnalyses, allMatches);
-    }
 
     private bool IsVacancyMatch(VacancyAnalysisResult analysis)
     {
@@ -843,25 +755,6 @@ public class VacancyAnalysisService : IVacancyAnalysisService
         return isMatch;
     }
 
-    private static string GenerateContentHash(Vacancy vacancy)
-    {
-        // Use only stable fields that don't change between scraping sessions
-        // Exclude: URL (may have tracking params), PublishedDate (may vary), Salary (may be updated)
-        var title = vacancy.Title?.Trim().ToLowerInvariant() ?? "";
-        var company = vacancy.Company?.Trim().ToLowerInvariant() ?? "";
-        var experience = vacancy.Experience?.Trim().ToLowerInvariant() ?? "";
-        var location = vacancy.Location?.Trim().ToLowerInvariant() ?? "";
-
-        // Take first 500 chars of description to avoid minor formatting changes
-        var description = vacancy.Description?.Trim().ToLowerInvariant();
-        if (!string.IsNullOrEmpty(description) && description.Length > 500)
-        {
-            description = description.Substring(0, 500);
-        }
-
-        var content = $"{title}|{company}|{description}|{experience}|{location}";
-        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(content)));
-    }
 
     private async Task UpdateVacancyAnalysisInDb(VacancyEntity dbVacancy, VacancyAnalysisResult analysis)
     {

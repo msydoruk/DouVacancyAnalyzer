@@ -26,35 +26,19 @@
                     <li><i class="fas fa-check text-success me-2"></i>@Localizer["NoTimeTracking"]</li>
                 </ul>
 
-                <div class="alert alert-info mb-4">
-                    <h6 class="alert-heading">@Localizer["TestMode"]</h6>
-                    @Localizer["TestDescription"]
+                <div id="loadingMessage" class="alert alert-info mb-3" style="display: none;">
+                    <i class="fas fa-spinner fa-spin me-2"></i>
+                    <span id="loadingText">Loading existing analysis results...</span>
                 </div>
 
                 <div class="d-grid gap-2 d-md-flex justify-content-md-start">
-                    <button id="startTestAnalysis" class="btn btn-warning btn-lg">
-                        <i class="fas fa-flask me-2"></i>
-                        @Localizer["StartTestAnalysis"]
-                    </button>
                     <button id="startAnalysis" class="btn btn-primary btn-lg">
                         <i class="fas fa-play me-2"></i>
-                        @Localizer["StartAnalysis"]
-                    </button>
-                    <button id="startOptimizedAnalysis" class="btn btn-success btn-lg">
-                        <i class="fas fa-rocket me-2"></i>
-                        Fast Analysis (Parallel)
+                        Start Analysis
                     </button>
                     <button id="cancelAnalysis" class="btn btn-danger btn-lg" style="display: none;">
                         <i class="fas fa-stop me-2"></i>
                         Cancel
-                    </button>
-                    <button id="clearDatabase" class="btn btn-outline-danger btn-lg">
-                        <i class="fas fa-trash me-2"></i>
-                        Clear Database
-                    </button>
-                    <button id="debugAnalysis" class="btn btn-outline-info btn-lg">
-                        <i class="fas fa-bug me-2"></i>
-                        Debug Analysis
                     </button>
                 </div>
 
@@ -160,19 +144,6 @@
         </div>
     </div>
 
-    <div class="col-md-12 mb-4">
-        <div class="card border-0 shadow">
-            <div class="card-header bg-danger text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-fire me-2"></i>
-                    Modern Stack Vacancies
-                </h5>
-            </div>
-            <div class="card-body p-4" id="modernTech">
-
-            </div>
-        </div>
-    </div>
 
     <div class="col-md-12 mb-4" id="newVacanciesSection" style="display: none;">
         <div class="card border-0 shadow">
@@ -207,12 +178,13 @@
         </div>
     </div>
 
+    <!-- Matching Vacancies section moved up -->
     <div class="col-md-12 mb-4">
         <div class="card border-0 shadow">
             <div class="card-header bg-dark text-white">
                 <h5 class="mb-0">
-                    <i class="fas fa-list me-2"></i>
-                    @Localizer["MatchingVacancies"]
+                    <i class="fas fa-bullseye me-2"></i>
+                    Matching Vacancies (Top 20)
                 </h5>
             </div>
             <div class="card-body p-4">
@@ -249,6 +221,38 @@
 
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modern Stack Vacancies section moved down -->
+    <div class="col-md-12 mb-4">
+        <div class="card border-0 shadow">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-fire me-2"></i>
+                    Modern Stack Vacancies
+                    <span class="badge bg-light text-dark ms-2" id="modernStackCount">0</span>
+                </h5>
+            </div>
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <small class="text-muted">Showing modern .NET vacancies with current technologies</small>
+                    </div>
+                    <div>
+                        <button id="modernStackPrevPage" class="btn btn-sm btn-outline-secondary me-2" disabled>
+                            <i class="fas fa-chevron-left"></i> Previous
+                        </button>
+                        <span id="modernStackPageInfo" class="text-muted me-2">Page 1 of 1</span>
+                        <button id="modernStackNextPage" class="btn btn-sm btn-outline-secondary" disabled>
+                            Next <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="modernTech">
+                    <!-- Modern stack vacancies will be populated here -->
                 </div>
             </div>
         </div>
@@ -295,6 +299,26 @@
     .filter-btn {
         margin-right: 10px;
         margin-bottom: 5px;
+    }
+
+    .modern-stack-pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-top: 20px;
+    }
+
+    .modern-stack-item {
+        border-left: 4px solid #dc3545;
+        margin-bottom: 15px;
+        padding: 15px;
+        border-radius: 8px;
+        background: #f8f9fa;
+    }
+
+    .modern-stack-item h6 {
+        color: #dc3545;
+        font-weight: 600;
     }
 </style>
 

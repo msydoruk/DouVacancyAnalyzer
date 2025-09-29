@@ -15,7 +15,6 @@ public interface IVacancyStorageService
     Task<int> GetNewVacancyCountAsync();
     Task<List<VacancyEntity>> GetVacanciesWithAnalysisAsync();
     Task<List<VacancyEntity>> GetUnanalyzedVacanciesAsync();
-    Task RecalculateContentHashesAsync();
     Task<VacancyCountHistory> CreateVacancyCountHistoryAsync(int totalVacancies, int activeVacancies, int newVacancies, int deactivatedVacancies, int matchingVacancies, decimal matchPercentage);
     Task<List<VacancyCountHistory>> GetVacancyCountHistoryAsync(int limit = 30);
     Task<List<VacancyEntity>> GetActiveVacanciesAsync();

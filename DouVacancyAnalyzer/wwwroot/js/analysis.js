@@ -3,11 +3,7 @@ const connection = new signalR.HubConnectionBuilder()
     .build();
 
 const startButton = document.getElementById('startAnalysis');
-const startTestButton = document.getElementById('startTestAnalysis');
-const startOptimizedButton = document.getElementById('startOptimizedAnalysis');
 const cancelButton = document.getElementById('cancelAnalysis');
-const clearDatabaseButton = document.getElementById('clearDatabase');
-const debugAnalysisButton = document.getElementById('debugAnalysis');
 const progressSection = document.getElementById('progressSection');
 const resultsSection = document.getElementById('resultsSection');
 const progressBar = document.getElementById('progressBar');
@@ -18,7 +14,6 @@ const progressLogContent = document.getElementById('progressLogContent');
 let experienceChart = null;
 let categoryChart = null;
 let currentLogEntry = null;
-let isTestMode = false;
 let analysisController = null;
 
 // Response status tracking
@@ -109,16 +104,6 @@ startButton.addEventListener('click', function() {
     startAnalysis();
 });
 
-startTestButton.addEventListener('click', function() {
-    isTestMode = true;
-    startTestAnalysis();
-});
-
-startOptimizedButton.addEventListener('click', function() {
-    isTestMode = false;
-    startOptimizedAnalysis();
-});
-
 cancelButton.addEventListener('click', function() {
     if (analysisController) {
         analysisController.abort();
@@ -126,25 +111,9 @@ cancelButton.addEventListener('click', function() {
     }
 });
 
-clearDatabaseButton.addEventListener('click', function() {
-    if (confirm('Are you sure you want to clear the database? This will remove all stored vacancies and analysis results.')) {
-        clearDatabase();
-    }
-});
-
-debugAnalysisButton.addEventListener('click', function() {
-    debugAnalysis();
-});
-
 connection.on("AnalysisStarted", function () {
-    // Блокуємо тільки ту кнопку, яка була натиснута
-    if (isTestMode) {
-        startTestButton.disabled = true;
-        startTestButton.innerHTML = `<i class="fas fa-spinner fa-spin me-2"></i>${window.localization.analysisInProgress}`;
-    } else {
-        startButton.disabled = true;
-        startButton.innerHTML = `<i class="fas fa-spinner fa-spin me-2"></i>${window.localization.analysisInProgress}`;
-    }
+    startButton.disabled = true;
+    startButton.innerHTML = `<i class="fas fa-spinner fa-spin me-2"></i>Analysis in progress...`;
 
     cancelButton.style.display = 'inline-block';
     progressSection.style.display = 'block';
@@ -228,7 +197,8 @@ connection.on("AnalysisCompleted", function (data) {
             alert('Отримано некоректні дані результатів. Перевірте консоль для деталей.');
         }
 
-        resetButtons();
+        // After analysis completes, change button to "Run New Analysis"
+        hideControlPanel();
     }, 1000);
 });
 
@@ -273,61 +243,6 @@ function startAnalysis() {
     });
 }
 
-function startTestAnalysis() {
-    analysisController = new AbortController();
-
-    fetch('/Home/StartTestAnalysis', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        signal: analysisController.signal
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (!data.success) {
-            alert('Помилка запуску тестового аналізу: ' + data.error);
-            resetButtons();
-        }
-    })
-    .catch(error => {
-        if (error.name === 'AbortError') {
-            console.log('Test analysis cancelled by user');
-        } else {
-            console.error('Error:', error);
-            alert('Помилка запуску тестового аналізу');
-        }
-        resetButtons();
-    });
-}
-
-function startOptimizedAnalysis() {
-    analysisController = new AbortController();
-
-    fetch('/Home/StartOptimizedAnalysis', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        signal: analysisController.signal
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (!data.success) {
-            alert('Помилка запуску оптимізованого аналізу: ' + data.error);
-            resetButtons();
-        }
-    })
-    .catch(error => {
-        if (error.name === 'AbortError') {
-            console.log('Optimized analysis cancelled by user');
-        } else {
-            console.error('Error:', error);
-            alert('Помилка запуску оптимізованого аналізу');
-        }
-        resetButtons();
-    });
-}
 
 function updateProgress(progress, message) {
     progressBar.style.width = progress + '%';
@@ -338,13 +253,21 @@ function updateProgress(progress, message) {
 
 function resetButtons() {
     startButton.disabled = false;
-    startTestButton.disabled = false;
-    startButton.innerHTML = `<i class="fas fa-play me-2"></i>${window.localization.startAnalysis}`;
-    startTestButton.innerHTML = `<i class="fas fa-flask me-2"></i>${window.localization.startTestAnalysis}`;
     progressBar.classList.remove('bg-danger');
     cancelButton.style.display = 'none';
-    isTestMode = false;
-    analysisController = null; // Скидаємо режим
+    analysisController = null;
+
+    // Check if results are already displayed
+    const resultsSection = document.getElementById('resultsSection');
+    if (resultsSection && resultsSection.style.display !== 'none') {
+        // Results are shown, set button to "Run New Analysis"
+        startButton.innerHTML = `<i class="fas fa-refresh me-2"></i>Run New Analysis`;
+        startButton.title = 'Click to run a new analysis and update the results';
+    } else {
+        // No results shown, set button to "Start Analysis"
+        startButton.innerHTML = `<i class="fas fa-play me-2"></i>Start Analysis`;
+        startButton.title = 'Click to start analyzing job vacancies';
+    }
 }
 
 function addLogEntry(message, type = 'info') {
@@ -670,11 +593,18 @@ function displayTechStats(techStats) {
     `;
 }
 
+// Modern Stack Pagination
+let modernStackVacancies = [];
+let modernStackCurrentPage = 1;
+const modernStackPageSize = 8;
+
 function displayModernTech(aiStats, report) {
     console.log('🔥 displayModernTech called with aiStats:', aiStats);
     console.log('📊 report.Matches count:', (report.Matches || []).length);
 
     const container = document.getElementById('modernTech');
+    const countBadge = document.getElementById('modernStackCount');
+
     // Use actual matches with modern stack instead of aiStats.ModernVacancies
     const matches = report.Matches || [];
 
@@ -690,74 +620,108 @@ function displayModernTech(aiStats, report) {
         });
     });
 
-    const modernVacancies = matches.filter(m => {
+    modernStackVacancies = matches.filter(m => {
         const isModern = m.Analysis && m.Analysis.IsModernStack;
         console.log(`  ${m.Vacancy?.Title}: IsModernStack = ${isModern}`);
         return isModern;
     });
 
-    console.log('✅ Modern stack vacancies found:', modernVacancies.length);
+    console.log('✅ Modern stack vacancies found:', modernStackVacancies.length);
 
-    if (modernVacancies.length === 0) {
+    // Update count badge
+    if (countBadge) {
+        countBadge.textContent = modernStackVacancies.length;
+    }
+
+    if (modernStackVacancies.length === 0) {
         container.innerHTML = '<div class="text-center text-muted py-4"><i class="fas fa-info-circle fa-2x mb-2"></i><p>No modern stack vacancies found in matches</p></div>';
         return;
     }
 
+    // Reset to first page
+    modernStackCurrentPage = 1;
+    renderModernStackPage();
+    setupModernStackPagination();
+}
+
+function renderModernStackPage() {
+    const container = document.getElementById('modernTech');
+    const totalPages = Math.ceil(modernStackVacancies.length / modernStackPageSize);
+    const start = (modernStackCurrentPage - 1) * modernStackPageSize;
+    const end = start + modernStackPageSize;
+    const pageVacancies = modernStackVacancies.slice(start, end);
+
     container.innerHTML = `
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead class="thead-light">
-                    <tr>
-                        <th>Job Title</th>
-                        <th>Company</th>
-                        <th>Location</th>
-                        <th>Technologies</th>
-                        <th>Score</th>
-                        <th>Link</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${modernVacancies.slice(0, 10).map(match => `
-                        <tr>
-                            <td>
-                                <strong>${match.Vacancy.Title}</strong>
-                                <br><small class="text-muted">${match.Vacancy.Experience || 'Not specified'}</small>
-                            </td>
-                            <td>${match.Vacancy.Company}</td>
-                            <td>${match.Vacancy.Location}</td>
-                            <td>
-                                ${(match.Analysis.DetectedTechnologies || []).slice(0, 3).map(tech =>
-                                    `<span class="badge bg-primary me-1">${tech}</span>`
-                                ).join('')}
-                                ${(match.Analysis.DetectedTechnologies || []).length > 3 ?
-                                    `<span class="text-muted">+${(match.Analysis.DetectedTechnologies || []).length - 3} more</span>` : ''
-                                }
-                            </td>
-                            <td>
-                                <span class="badge bg-success">${Math.round(match.Analysis.MatchScore || 0)}%</span>
-                            </td>
-                            <td>
-                                <a href="${match.Vacancy.Link}" target="_blank" class="btn btn-sm btn-outline-primary">
-                                    <i class="fas fa-external-link-alt"></i>
-                                </a>
-                            </td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+        <div class="row">
+            ${pageVacancies.map(match => `
+                <div class="col-md-6 mb-3">
+                    <div class="modern-stack-item">
+                        <h6>${match.Vacancy.Title}</h6>
+                        <p class="mb-2">
+                            <strong>Company:</strong> ${match.Vacancy.Company}<br>
+                            <strong>Location:</strong> ${match.Vacancy.Location}<br>
+                            <strong>Experience:</strong> ${match.Vacancy.Experience || 'Not specified'}
+                        </p>
+                        <div class="mb-2">
+                            <strong>Technologies:</strong><br>
+                            ${(match.Analysis.DetectedTechnologies || []).slice(0, 5).map(tech =>
+                                `<span class="badge bg-primary me-1 mb-1">${tech}</span>`
+                            ).join('')}
+                            ${(match.Analysis.DetectedTechnologies || []).length > 5 ?
+                                `<span class="text-muted">+${(match.Analysis.DetectedTechnologies || []).length - 5} more</span>` : ''
+                            }
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="badge bg-success">${Math.round(match.Analysis.MatchScore || 0)}% match</span>
+                            <a href="${match.Vacancy.Url}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-external-link-alt me-1"></i>View Job
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
         </div>
-        ${modernVacancies.length > 10 ? `
-            <div class="text-center mt-3">
-                <small class="text-muted">Showing top 10 of ${modernVacancies.length} modern vacancies</small>
-            </div>
-        ` : ''}
     `;
+
+    // Update pagination info
+    const pageInfo = document.getElementById('modernStackPageInfo');
+    if (pageInfo) {
+        pageInfo.textContent = `Page ${modernStackCurrentPage} of ${totalPages}`;
+    }
+}
+
+function setupModernStackPagination() {
+    const totalPages = Math.ceil(modernStackVacancies.length / modernStackPageSize);
+    const prevBtn = document.getElementById('modernStackPrevPage');
+    const nextBtn = document.getElementById('modernStackNextPage');
+
+    if (prevBtn) {
+        prevBtn.disabled = modernStackCurrentPage <= 1;
+        prevBtn.onclick = () => {
+            if (modernStackCurrentPage > 1) {
+                modernStackCurrentPage--;
+                renderModernStackPage();
+                setupModernStackPagination();
+            }
+        };
+    }
+
+    if (nextBtn) {
+        nextBtn.disabled = modernStackCurrentPage >= totalPages;
+        nextBtn.onclick = () => {
+            if (modernStackCurrentPage < totalPages) {
+                modernStackCurrentPage++;
+                renderModernStackPage();
+                setupModernStackPagination();
+            }
+        };
+    }
 }
 
 async function displayVacancies(matches) {
     console.log('displayVacancies called with matches:', matches);
 
-    // Store matches globally for filtering
+    // Store all matches globally for filtering
     currentVacancies = matches || [];
 
     const tbody = document.querySelector('#vacancyTable tbody');
@@ -768,8 +732,12 @@ async function displayVacancies(matches) {
         return;
     }
 
+    // Limit to top 20 matching vacancies
+    const top20Matches = matchesList.slice(0, 20);
+    console.log(`📋 Showing top ${top20Matches.length} of ${matchesList.length} matching vacancies`);
+
     // Use the new table update function (no cache loading needed)
-    await updateVacancyTable(matchesList);
+    await updateVacancyTable(top20Matches);
 }
 
 function displayCharts(techStats, aiStats) {
@@ -982,10 +950,6 @@ function createVacancyHistoryChart(historyData) {
 
 // Database management functionality
 
-// Load stored analysis on page load
-document.addEventListener('DOMContentLoaded', async function() {
-    await loadStoredAnalysisIfAvailable();
-});
 
 
 
@@ -1001,20 +965,72 @@ async function loadStoredAnalysisIfAvailable() {
 
         if (data.success && data.totalVacancies > 0) {
             console.log(`✅ Found ${data.totalVacancies} stored vacancies, loading analysis automatically...`);
-            await loadStoredAnalysis(false); // false = don't show loading UI
-        } else {
-            console.log('❌ No stored vacancies found, totalVacancies:', data.totalVacancies);
 
-            // Try to load anyway in case there's some data
-            console.log('🔄 Attempting to load stored analysis anyway...');
-            await loadStoredAnalysis(false);
+            // Hide the main control panel and show loading message
+            showLoadingState();
+
+            // Load stored analysis without loading UI (we handle it ourselves)
+            const hasData = await loadStoredAnalysis(false);
+
+            if (hasData) {
+                console.log('📊 Analysis data loaded successfully, hiding control panel');
+                hideControlPanel();
+            } else {
+                console.log('❌ No analysis data found, showing control panel');
+                showControlPanel();
+            }
+        } else {
+            console.log('❌ No stored vacancies found, showing control panel');
+            showControlPanel();
         }
     } catch (error) {
         console.error('❌ Error checking for stored analysis:', error);
+        showControlPanel();
+    }
+}
 
-        // Try to load anyway
-        console.log('🔄 Attempting to load stored analysis despite error...');
-        await loadStoredAnalysis(false);
+function showLoadingState() {
+    console.log('⏳ Showing loading state...');
+    const startButton = document.getElementById('startAnalysis');
+    const loadingMessage = document.getElementById('loadingMessage');
+
+    if (startButton) {
+        startButton.disabled = true;
+    }
+
+    if (loadingMessage) {
+        loadingMessage.style.display = 'block';
+    }
+}
+
+function hideControlPanel() {
+    // Don't hide completely, just show that data is loaded
+    const startButton = document.getElementById('startAnalysis');
+    const loadingMessage = document.getElementById('loadingMessage');
+
+    if (loadingMessage) {
+        loadingMessage.style.display = 'none';
+    }
+
+    if (startButton) {
+        startButton.disabled = false;
+        startButton.innerHTML = '<i class="fas fa-refresh me-2"></i>Run New Analysis';
+        startButton.title = 'Click to run a new analysis and update the results';
+    }
+}
+
+function showControlPanel() {
+    const startButton = document.getElementById('startAnalysis');
+    const loadingMessage = document.getElementById('loadingMessage');
+
+    if (loadingMessage) {
+        loadingMessage.style.display = 'none';
+    }
+
+    if (startButton) {
+        startButton.disabled = false;
+        startButton.innerHTML = '<i class="fas fa-play me-2"></i>Start Analysis';
+        startButton.title = 'Click to start analyzing job vacancies';
     }
 }
 
@@ -1023,7 +1039,6 @@ async function loadStoredAnalysis(showLoadingUI = true) {
 
     if (showLoadingUI) {
         startButton.disabled = true;
-        startTestButton.disabled = true;
     }
 
     try {
@@ -1056,51 +1071,29 @@ async function loadStoredAnalysis(showLoadingUI = true) {
             if (!showLoadingUI && data.data.Report && data.data.Report.TotalVacancies > 0) {
                 console.log(`✅ Auto-loaded analysis with ${data.data.Report.TotalVacancies} total vacancies`);
             }
+
+            return true; // Data was successfully loaded
         } else {
             console.error('❌ API Error:', data.error || 'Unknown error');
             console.log('🔍 Full response data:', data);
             if (showLoadingUI) {
                 showNotification('Error loading stored analysis: ' + (data.error || 'Unknown error'), 'error');
             }
+            return false; // No data loaded
         }
     } catch (error) {
         console.error('Error loading stored analysis:', error);
         if (showLoadingUI) {
             showNotification('Error loading stored analysis', 'error');
         }
+        return false; // Error occurred, no data loaded
     } finally {
         if (showLoadingUI) {
             startButton.disabled = false;
-            startTestButton.disabled = false;
         }
     }
 }
 
-function clearDatabase() {
-    clearDatabaseButton.disabled = true;
-    clearDatabaseButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Clearing...';
-
-    fetch('/Home/ClearDatabase', {
-        method: 'POST'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showNotification('Database cleared successfully', 'success');
-            resultsSection.style.display = 'none';
-        } else {
-            showNotification('Error: ' + data.error, 'error');
-        }
-    })
-    .catch(error => {
-        console.error('Error clearing database:', error);
-        showNotification('Error clearing database', 'error');
-    })
-    .finally(() => {
-        clearDatabaseButton.disabled = false;
-        clearDatabaseButton.innerHTML = '<i class="fas fa-trash me-2"></i>Clear Database';
-    });
-}
 
 function showNotification(message, type) {
     const alertClass = type === 'error' ? 'alert-danger' :
@@ -1182,36 +1175,6 @@ function displayNewVacancies() {
         });
 }
 
-function debugAnalysis() {
-    console.log('🐛 Starting debug analysis...');
-
-    fetch('/Home/DebugStoredAnalysis')
-        .then(response => response.json())
-        .then(data => {
-            console.log('🐛 Debug response:', data);
-
-            if (data.success) {
-                console.log('📊 Debug info:', data.debug);
-                alert(`Debug Info:
-
-Total Vacancies in DB: ${data.debug.TotalVacanciesInDb}
-New Vacancies Count: ${data.debug.NewVacanciesCount}
-Vacancies with Analysis: ${data.debug.VacanciesWithAnalysisCount}
-Analyzed Vacancies: ${data.debug.AnalyzedVacanciesCount}
-
-Sample vacancy analysis (check console for details)`);
-
-                console.log('🔍 Sample vacancy analysis:', data.debug.SampleVacancyAnalysis);
-            } else {
-                console.error('❌ Debug failed:', data.error);
-                alert('Debug failed: ' + data.error);
-            }
-        })
-        .catch(error => {
-            console.error('❌ Debug error:', error);
-            alert('Debug error: ' + error.message);
-        });
-}
 
 // ===== RESPONSE STATUS MANAGEMENT =====
 
@@ -1506,13 +1469,19 @@ async function debugVacancyData() {
     }
 }
 
-// Initialize filter buttons when page loads
+// Initialize page when DOM is loaded
 document.addEventListener('DOMContentLoaded', async function() {
+    console.log('🚀 Initializing page...');
+
+    // Setup filter buttons
     setupFilterButtons();
     updateFilterButtonState();
 
     // Debug database content first
     await debugVacancyData();
+
+    // Auto-load stored analysis if available
+    await loadStoredAnalysisIfAvailable();
 
     console.log('📋 Page initialized - using real-time database queries for response status');
 });

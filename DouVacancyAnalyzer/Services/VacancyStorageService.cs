@@ -200,27 +200,6 @@ public class VacancyStorageService : IVacancyStorageService
             .ToListAsync();
     }
 
-    public async Task RecalculateContentHashesAsync()
-    {
-        var allVacancies = await _context.Vacancies.ToListAsync();
-        _logger.LogInformation("Recalculating content hashes for {Count} vacancies", allVacancies.Count);
-
-        foreach (var vacancy in allVacancies)
-        {
-            var vacancyModel = vacancy.ToVacancy();
-            var newHash = VacancyEntity.FromVacancy(vacancyModel).ContentHash;
-
-            if (vacancy.ContentHash != newHash)
-            {
-                _logger.LogInformation("Updating hash for {Title}: {OldHash} -> {NewHash}",
-                    vacancy.Title, vacancy.ContentHash[..8] + "...", newHash[..8] + "...");
-                vacancy.ContentHash = newHash;
-            }
-        }
-
-        await _context.SaveChangesAsync();
-        _logger.LogInformation("Content hash recalculation completed");
-    }
 
     public async Task<VacancyCountHistory> CreateVacancyCountHistoryAsync(
         int totalVacancies, int activeVacancies, int newVacancies,

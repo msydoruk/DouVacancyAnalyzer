@@ -23,7 +23,6 @@ public class VacancyDbContext : DbContext
             entity.Property(e => e.Title).IsRequired().HasMaxLength(500);
             entity.Property(e => e.Company).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Url).IsRequired().HasMaxLength(1000);
-            entity.Property(e => e.ContentHash).IsRequired().HasMaxLength(64);
             entity.Property(e => e.Description).HasColumnType("TEXT");
             entity.Property(e => e.Technologies).HasColumnType("TEXT");
             entity.Property(e => e.DetectedTechnologies).HasColumnType("TEXT");

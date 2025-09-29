@@ -48,171 +48,7 @@ public class HomeController : Controller
         return View();
     }
 
-    [HttpPost]
-    public async Task<IActionResult> StartTestAnalysis()
-    {
-        try
-        {
-            _logger.LogInformation("🧪 Starting TEST ANALYSIS with limit: {Limit}", _scrapingSettings.TestModeLimit);
-            await _hubContext.Clients.All.SendAsync("AnalysisStarted");
 
-            await _hubContext.Clients.All.SendAsync("ProgressUpdate", _progressLocalizer["CollectingVacancies"].Value, 10);
-            var scrapedVacancies = await _scrapingService.GetTestVacanciesAsync(_scrapingSettings.TestModeLimit);
-
-            _logger.LogInformation("🧪 Test mode collected {Count} vacancies", scrapedVacancies.Count);
-
-            // Save to database and detect new vacancies
-            await _hubContext.Clients.All.SendAsync("ProgressUpdate", "Saving to database...", 20);
-            var savedVacancies = await _storageService.SaveVacanciesAsync(scrapedVacancies);
-            var newVacancyCount = await _storageService.GetNewVacancyCountAsync();
-
-            await _hubContext.Clients.All.SendAsync("ProgressUpdate",
-                string.Format("Found {0} vacancies ({1} new)", scrapedVacancies.Count, newVacancyCount), 30);
-
-            // Get only unanalyzed vacancies for analysis
-            var unanalyzedVacancies = await _storageService.GetUnanalyzedVacanciesAsync();
-            var vacanciesForAnalysis = unanalyzedVacancies.Select(v => v.ToVacancy()).ToList();
-
-            if (vacanciesForAnalysis.Count == 0)
-            {
-                _logger.LogInformation("🧪 No new vacancies to analyze, loading existing results");
-                await _hubContext.Clients.All.SendAsync("ProgressUpdate", "No new vacancies to analyze, loading existing results...", 90);
-
-                // Load existing analysis results
-                var existingResults = await GetStoredAnalysisResults();
-                await _hubContext.Clients.All.SendAsync("AnalysisCompleted", (object)existingResults);
-                return Json(new { success = true });
-            }
-
-            var (report, allAnalyses, allMatches) = await _analysisService.AnalyzeVacanciesWithProgressAsync(
-                vacanciesForAnalysis,
-                async (message, progress) => await _hubContext.Clients.All.SendAsync("ProgressUpdate", message, progress));
-
-            _logger.LogInformation("🧪 Test analysis completed: {Total} total, {Matching} matching ({Percentage:F1}%)",
-                report.TotalVacancies, report.MatchingVacancies, report.MatchPercentage);
-
-            await _hubContext.Clients.All.SendAsync("ProgressUpdate", _progressLocalizer["CalculatingStatistics"].Value, 60);
-
-            // Get all vacancies for statistics (existing + newly analyzed)
-            var allVacanciesForStats = await _storageService.GetVacanciesWithAnalysisAsync();
-            var allVacanciesData = allVacanciesForStats.Select(v => v.ToVacancy()).ToList();
-            var techStats = _analysisService.GetTechnologyStatistics(allVacanciesData);
-
-            await _hubContext.Clients.All.SendAsync("ProgressUpdate", _progressLocalizer["GettingAiAnalysis"].Value, 80);
-
-            // Create combined report with all analyzed vacancies
-            var combinedReport = await GetStoredAnalysisResults();
-
-            await _hubContext.Clients.All.SendAsync("ProgressUpdate", _progressLocalizer["Completing"].Value, 100);
-
-            var result = new
-            {
-                Report = combinedReport.Report,
-                TechStats = combinedReport.TechStats,
-                AiStats = combinedReport.AiStats
-            };
-
-            _logger.LogInformation("🧪 Test mode preparing to send results:");
-            var reportForLogging = (AnalysisReport)combinedReport.Report;
-            var techStatsForLogging = (TechnologyStatistics)combinedReport.TechStats;
-            var aiStatsForLogging = (TechnologyStatistics)combinedReport.AiStats;
-            _logger.LogInformation("  Report: TotalVacancies={Total}, MatchingVacancies={Matching}, MatchPercentage={Percentage:F1}%",
-                reportForLogging.TotalVacancies, reportForLogging.MatchingVacancies, reportForLogging.MatchPercentage);
-            _logger.LogInformation("  TechStats: Total={Total}",
-                techStatsForLogging.Total);
-            _logger.LogInformation("  AiStats: VacancyCategories count={Count}",
-                aiStatsForLogging.VacancyCategories?.Count ?? 0);
-
-            await _hubContext.Clients.All.SendAsync("AnalysisCompleted", result);
-            _logger.LogInformation("🧪 Test mode results sent to frontend");
-
-            return Json(new { success = true });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "❌ Error during test analysis");
-            _logger.LogError("Exception Type: {ExceptionType}", ex.GetType().Name);
-            _logger.LogError("Exception Message: {Message}", ex.Message);
-            if (ex.InnerException != null)
-            {
-                _logger.LogError("Inner Exception Type: {InnerExceptionType}", ex.InnerException.GetType().Name);
-                _logger.LogError("Inner Exception Message: {InnerMessage}", ex.InnerException.Message);
-                _logger.LogError("Inner Exception Stack: {InnerStack}", ex.InnerException.StackTrace);
-            }
-            _logger.LogError("Full Stack Trace: {StackTrace}", ex.StackTrace);
-
-            await _hubContext.Clients.All.SendAsync("AnalysisError", ex.Message);
-            return Json(new { success = false, error = ex.Message });
-        }
-    }
-
-    [HttpPost]
-    public async Task<IActionResult> StartOptimizedAnalysis()
-    {
-        try
-        {
-            _logger.LogInformation("🚀 Starting OPTIMIZED ANALYSIS");
-            await _hubContext.Clients.All.SendAsync("AnalysisStarted");
-
-            await _hubContext.Clients.All.SendAsync("ProgressUpdate", _progressLocalizer["CollectingVacancies"].Value, 10);
-            var scrapedVacancies = await _scrapingService.GetVacanciesAsync();
-
-            // Save to database and detect new vacancies
-            await _hubContext.Clients.All.SendAsync("ProgressUpdate", "Saving to database...", 20);
-            var savedVacancies = await _storageService.SaveVacanciesAsync(scrapedVacancies);
-            var newVacancyCount = await _storageService.GetNewVacancyCountAsync();
-
-            await _hubContext.Clients.All.SendAsync("ProgressUpdate",
-                string.Format("Found {0} vacancies ({1} new)", scrapedVacancies.Count, newVacancyCount), 30);
-
-            // Get only unanalyzed vacancies for analysis
-            var unanalyzedVacancies = await _storageService.GetUnanalyzedVacanciesAsync();
-            var vacanciesForAnalysis = unanalyzedVacancies.Select(v => v.ToVacancy()).ToList();
-
-            if (vacanciesForAnalysis.Count == 0)
-            {
-                _logger.LogInformation("No new vacancies to analyze, loading existing results");
-                await _hubContext.Clients.All.SendAsync("ProgressUpdate", "No new vacancies to analyze, loading existing results...", 90);
-
-                // Load existing analysis results
-                var existingResults = await GetStoredAnalysisResults();
-                await _hubContext.Clients.All.SendAsync("AnalysisCompleted", (object)existingResults);
-                return Json(new { success = true });
-            }
-
-            // Use optimized parallel analysis
-            var (report, allAnalyses, allMatches) = await _analysisService.AnalyzeVacanciesOptimizedAsync(
-                vacanciesForAnalysis,
-                async (message, progress) => await _hubContext.Clients.All.SendAsync("ProgressUpdate", message, progress));
-
-            _logger.LogInformation("🚀 Optimized analysis completed: {Total} total, {Matching} matching ({Percentage:F1}%)",
-                report.TotalVacancies, report.MatchingVacancies, report.MatchPercentage);
-
-            await _hubContext.Clients.All.SendAsync("ProgressUpdate", _progressLocalizer["CalculatingStatistics"].Value, 60);
-
-            // Create combined report with all analyzed vacancies
-            var combinedReport = await GetStoredAnalysisResults();
-
-            await _hubContext.Clients.All.SendAsync("ProgressUpdate", _progressLocalizer["Completing"].Value, 100);
-
-            var result = new
-            {
-                Report = combinedReport.Report,
-                TechStats = combinedReport.TechStats,
-                AiStats = combinedReport.AiStats
-            };
-
-            await _hubContext.Clients.All.SendAsync("AnalysisCompleted", result);
-
-            return Json(new { success = true });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error during optimized analysis");
-            await _hubContext.Clients.All.SendAsync("AnalysisError", ex.Message);
-            return Json(new { success = false, error = ex.Message });
-        }
-    }
 
     [HttpPost]
     public async Task<IActionResult> StartAnalysis()
@@ -247,7 +83,8 @@ public class HomeController : Controller
                 return Json(new { success = true });
             }
 
-            var (report, allAnalyses, allMatches) = await _analysisService.AnalyzeVacanciesWithProgressAsync(
+            // Use optimized parallel analysis for better performance
+            var (report, allAnalyses, allMatches) = await _analysisService.AnalyzeVacanciesAsync(
                 vacanciesForAnalysis,
                 async (message, progress) => await _hubContext.Clients.All.SendAsync("ProgressUpdate", message, progress));
 
@@ -264,6 +101,10 @@ public class HomeController : Controller
                 TechStats = combinedReport.TechStats,
                 AiStats = combinedReport.AiStats
             };
+
+            // Create vacancy count history record
+            var reportForHistory = (AnalysisReport)combinedReport.Report;
+            await CreateVacancyCountHistoryRecord(reportForHistory);
 
             await _hubContext.Clients.All.SendAsync("AnalysisCompleted", result);
 
@@ -299,35 +140,7 @@ public class HomeController : Controller
         }
     }
 
-    [HttpPost]
-    public async Task<IActionResult> ClearDatabase()
-    {
-        try
-        {
-            await _storageService.ClearDatabaseAsync();
-            return Json(new { success = true, message = "Database cleared successfully" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error clearing database");
-            return Json(new { success = false, error = ex.Message });
-        }
-    }
 
-    [HttpPost]
-    public async Task<IActionResult> RecalculateHashes()
-    {
-        try
-        {
-            await _storageService.RecalculateContentHashesAsync();
-            return Json(new { success = true, message = "Content hashes recalculated successfully" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error recalculating hashes");
-            return Json(new { success = false, error = ex.Message });
-        }
-    }
 
     [HttpPost]
     public async Task<IActionResult> MarkVacanciesAsViewed()
@@ -344,48 +157,6 @@ public class HomeController : Controller
         }
     }
 
-    [HttpGet]
-    public async Task<IActionResult> DebugStoredAnalysis()
-    {
-        try
-        {
-            var vacanciesWithAnalysis = await _storageService.GetVacanciesWithAnalysisAsync();
-            var totalCount = await _storageService.GetTotalVacancyCountAsync();
-            var newCount = await _storageService.GetNewVacancyCountAsync();
-
-            var debugInfo = new
-            {
-                TotalVacanciesInDb = totalCount,
-                NewVacanciesCount = newCount,
-                VacanciesWithAnalysisCount = vacanciesWithAnalysis.Count,
-                AnalyzedVacanciesCount = vacanciesWithAnalysis.Count(v => v.MatchScore.HasValue),
-                SampleVacancyAnalysis = vacanciesWithAnalysis.Take(3).Select(v => new
-                {
-                    Title = v.Title,
-                    Company = v.Company,
-                    MatchScore = v.MatchScore,
-                    IsModernStack = v.IsModernStack,
-                    IsMiddleLevel = v.IsMiddleLevel,
-                    HasAcceptableEnglish = v.HasAcceptableEnglish,
-                    HasNoTimeTracker = v.HasNoTimeTracker,
-                    IsBackendSuitable = v.IsBackendSuitable,
-                    VacancyCategory = v.VacancyCategory?.ToString(),
-                    DetectedExperienceLevel = v.DetectedExperienceLevel?.ToString(),
-                    DetectedEnglishLevel = v.DetectedEnglishLevel?.ToString(),
-                    DetectedTechnologies = v.DetectedTechnologies,
-                    AnalysisReason = v.AnalysisReason,
-                    LastAnalyzedAt = v.LastAnalyzedAt
-                }).ToList()
-            };
-
-            return Json(new { success = true, debug = debugInfo });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in debug endpoint");
-            return Json(new { success = false, error = ex.Message, stackTrace = ex.StackTrace });
-        }
-    }
 
     [HttpGet]
     public async Task<IActionResult> GetNewVacancies()
@@ -614,6 +385,35 @@ public class HomeController : Controller
         }
 
         return true;
+    }
+
+    private async Task CreateVacancyCountHistoryRecord(AnalysisReport report)
+    {
+        try
+        {
+            var totalVacancies = await _storageService.GetTotalVacancyCountAsync();
+            var activeVacancies = await _storageService.GetActiveVacancyCountAsync();
+            var newVacancies = await _storageService.GetNewVacancyCountAsync();
+
+            // Calculate deactivated vacancies (rough estimate)
+            var deactivatedVacancies = totalVacancies - activeVacancies;
+
+            await _storageService.CreateVacancyCountHistoryAsync(
+                totalVacancies,
+                activeVacancies,
+                newVacancies,
+                deactivatedVacancies,
+                report.MatchingVacancies,
+                (decimal)report.MatchPercentage
+            );
+
+            _logger.LogInformation("📊 Created vacancy count history record: Total={Total}, Active={Active}, New={New}, Matching={Matching}, Match%={MatchPercentage:F1}%",
+                totalVacancies, activeVacancies, newVacancies, report.MatchingVacancies, report.MatchPercentage);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Failed to create vacancy count history record");
+        }
     }
 
     // ===== VACANCY RESPONSE STATUS API =====
