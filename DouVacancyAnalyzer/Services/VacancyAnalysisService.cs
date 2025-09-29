@@ -248,6 +248,10 @@ public class VacancyAnalysisService : IVacancyAnalysisService
             var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken);
             var responseText = response.Value.Content[0].Text;
 
+            _logger.LogDebug("🤖 Experience AI Response for '{Title}': {Response}",
+                vacancy.Title.Length > 50 ? vacancy.Title[..50] + "..." : vacancy.Title,
+                responseText);
+
             var jsonStart = responseText.IndexOf('{');
             var jsonEnd = responseText.LastIndexOf('}');
 
@@ -397,6 +401,7 @@ public class VacancyAnalysisService : IVacancyAnalysisService
         {
             VacancyCategory = category.VacancyCategory,
             DetectedExperienceLevel = experience.DetectedExperienceLevel,
+            DetectedYearsOfExperience = experience.DetectedYearsOfExperience,
             DetectedEnglishLevel = english.DetectedEnglishLevel,
             IsModernStack = technology.IsModernStack,
             IsMiddleLevel = experience.IsMiddleLevel,
@@ -760,6 +765,7 @@ public class VacancyAnalysisService : IVacancyAnalysisService
     {
         dbVacancy.VacancyCategory = analysis.VacancyCategory;
         dbVacancy.DetectedExperienceLevel = analysis.DetectedExperienceLevel;
+        dbVacancy.DetectedYearsOfExperience = analysis.DetectedYearsOfExperience;
         dbVacancy.DetectedEnglishLevel = analysis.DetectedEnglishLevel;
         dbVacancy.IsModernStack = analysis.IsModernStack;
         dbVacancy.IsMiddleLevel = analysis.IsMiddleLevel;
@@ -828,6 +834,8 @@ public class VacancyAnalysisService : IVacancyAnalysisService
     {
         try
         {
+            _logger.LogDebug("🔍 Parsing Experience Analysis JSON: {Json}", jsonString);
+
             using var doc = JsonDocument.Parse(jsonString);
             var root = doc.RootElement;
 
@@ -844,6 +852,14 @@ public class VacancyAnalysisService : IVacancyAnalysisService
                 _ => ExperienceLevel.Unspecified
             };
 
+            var yearsOfExperience = root.TryGetProperty("DetectedYearsOfExperience", out var yearsProp)
+                ? yearsProp.GetString()
+                : null;
+
+            _logger.LogDebug("📅 Years detected: '{Years}' (Raw prop: {HasProp}, Value: '{Value}')",
+                yearsOfExperience,
+                root.TryGetProperty("DetectedYearsOfExperience", out _),
+                yearsProp.ValueKind != JsonValueKind.Null && yearsProp.ValueKind != JsonValueKind.Undefined ? yearsProp.ToString() : "null");
             var isMiddle = root.TryGetProperty("IsMiddleLevel", out var middleProp) && middleProp.GetBoolean();
             var score = root.TryGetProperty("ExperienceScore", out var scoreProp) ? scoreProp.GetInt32() : 50;
             var reasoning = root.TryGetProperty("Reasoning", out var reasonProp) ? reasonProp.GetString() ?? "" : "";
@@ -851,6 +867,7 @@ public class VacancyAnalysisService : IVacancyAnalysisService
             return new ExperienceAnalysisResult
             {
                 DetectedExperienceLevel = level,
+                DetectedYearsOfExperience = yearsOfExperience,
                 IsMiddleLevel = isMiddle,
                 ExperienceScore = score,
                 Reasoning = reasoning

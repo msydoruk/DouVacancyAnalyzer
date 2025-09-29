@@ -19,4 +19,5 @@ public interface IVacancyStorageService
     Task<List<VacancyCountHistory>> GetVacancyCountHistoryAsync(int limit = 30);
     Task<List<VacancyEntity>> GetActiveVacanciesAsync();
     Task<int> GetActiveVacancyCountAsync();
+    Task ResetAnalysisDataAsync();
 }

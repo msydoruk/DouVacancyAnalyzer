@@ -118,6 +118,66 @@ public class HomeController : Controller
         }
     }
 
+    [HttpPost]
+    public async Task<IActionResult> ReAnalyzeExisting()
+    {
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("AnalysisStarted");
+
+            // Reset analysis data for all vacancies
+            await _hubContext.Clients.All.SendAsync("ProgressUpdate", "Resetting analysis data...", 10);
+            await _storageService.ResetAnalysisDataAsync();
+
+            // Get all active vacancies for re-analysis
+            await _hubContext.Clients.All.SendAsync("ProgressUpdate", "Loading vacancies for re-analysis...", 20);
+            var allVacancies = await _storageService.GetActiveVacanciesAsync();
+            var vacanciesForAnalysis = allVacancies.Select(v => v.ToVacancy()).ToList();
+
+            if (vacanciesForAnalysis.Count == 0)
+            {
+                await _hubContext.Clients.All.SendAsync("AnalysisError", "No vacancies found for re-analysis");
+                return Json(new { success = false, error = "No vacancies found for re-analysis" });
+            }
+
+            await _hubContext.Clients.All.SendAsync("ProgressUpdate",
+                $"Starting re-analysis of {vacanciesForAnalysis.Count} vacancies...", 30);
+
+            // Analyze all vacancies
+            var (report, allAnalyses, allMatches) = await _analysisService.AnalyzeVacanciesAsync(
+                vacanciesForAnalysis,
+                async (message, progress) => await _hubContext.Clients.All.SendAsync("ProgressUpdate", message, progress));
+
+            await _hubContext.Clients.All.SendAsync("ProgressUpdate", "Calculating statistics...", 60);
+
+            // Create combined report with all re-analyzed vacancies
+            var combinedReport = await GetStoredAnalysisResults();
+
+            await _hubContext.Clients.All.SendAsync("ProgressUpdate", "Completing re-analysis...", 100);
+
+            var result = new
+            {
+                Report = combinedReport.Report,
+                TechStats = combinedReport.TechStats,
+                AiStats = combinedReport.AiStats
+            };
+
+            // Create vacancy count history record
+            var reportForHistory = (AnalysisReport)combinedReport.Report;
+            await CreateVacancyCountHistoryRecord(reportForHistory);
+
+            await _hubContext.Clients.All.SendAsync("AnalysisCompleted", result);
+
+            return Json(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during re-analysis");
+            await _hubContext.Clients.All.SendAsync("AnalysisError", ex.Message);
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetDatabaseStats()
     {

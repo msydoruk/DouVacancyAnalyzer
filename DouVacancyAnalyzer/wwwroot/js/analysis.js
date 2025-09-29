@@ -3,6 +3,7 @@ const connection = new signalR.HubConnectionBuilder()
     .build();
 
 const startButton = document.getElementById('startAnalysis');
+const reAnalyzeButton = document.getElementById('reAnalyzeExisting');
 const cancelButton = document.getElementById('cancelAnalysis');
 const progressSection = document.getElementById('progressSection');
 const resultsSection = document.getElementById('resultsSection');
@@ -104,6 +105,12 @@ startButton.addEventListener('click', function() {
     startAnalysis();
 });
 
+reAnalyzeButton.addEventListener('click', function() {
+    if (confirm('Are you sure you want to re-analyze all existing vacancies? This will reset all current analysis data and start fresh.')) {
+        reAnalyzeExistingVacancies();
+    }
+});
+
 cancelButton.addEventListener('click', function() {
     if (analysisController) {
         analysisController.abort();
@@ -114,6 +121,7 @@ cancelButton.addEventListener('click', function() {
 connection.on("AnalysisStarted", function () {
     startButton.disabled = true;
     startButton.innerHTML = `<i class="fas fa-spinner fa-spin me-2"></i>Analysis in progress...`;
+    reAnalyzeButton.disabled = true;
 
     cancelButton.style.display = 'inline-block';
     progressSection.style.display = 'block';
@@ -243,6 +251,33 @@ function startAnalysis() {
     });
 }
 
+function reAnalyzeExistingVacancies() {
+    analysisController = new AbortController();
+
+    fetch('/Home/ReAnalyzeExisting', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        signal: analysisController.signal
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            alert('Помилка запуску повторного аналізу: ' + data.error);
+            resetButtons();
+        }
+    })
+    .catch(error => {
+        if (error.name === 'AbortError') {
+            console.log('Re-analysis cancelled by user');
+        } else {
+            console.error('Error:', error);
+            alert('Помилка запуску повторного аналізу');
+        }
+        resetButtons();
+    });
+}
 
 function updateProgress(progress, message) {
     progressBar.style.width = progress + '%';
@@ -260,13 +295,16 @@ function resetButtons() {
     // Check if results are already displayed
     const resultsSection = document.getElementById('resultsSection');
     if (resultsSection && resultsSection.style.display !== 'none') {
-        // Results are shown, set button to "Run New Analysis"
+        // Results are shown, set button to "Run New Analysis" and show re-analyze button
         startButton.innerHTML = `<i class="fas fa-refresh me-2"></i>Run New Analysis`;
         startButton.title = 'Click to run a new analysis and update the results';
+        reAnalyzeButton.style.display = 'inline-block';
+        reAnalyzeButton.disabled = false;
     } else {
-        // No results shown, set button to "Start Analysis"
+        // No results shown, set button to "Start Analysis" and hide re-analyze button
         startButton.innerHTML = `<i class="fas fa-play me-2"></i>Start Analysis`;
         startButton.title = 'Click to start analyzing job vacancies';
+        reAnalyzeButton.style.display = 'none';
     }
 }
 
@@ -728,7 +766,7 @@ async function displayVacancies(matches) {
     const matchesList = matches || [];
 
     if (matchesList.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No matching vacancies found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">No matching vacancies found</td></tr>';
         return;
     }
 
@@ -1021,6 +1059,7 @@ function hideControlPanel() {
 
 function showControlPanel() {
     const startButton = document.getElementById('startAnalysis');
+    const reAnalyzeButton = document.getElementById('reAnalyzeExisting');
     const loadingMessage = document.getElementById('loadingMessage');
 
     if (loadingMessage) {
@@ -1031,6 +1070,10 @@ function showControlPanel() {
         startButton.disabled = false;
         startButton.innerHTML = '<i class="fas fa-play me-2"></i>Start Analysis';
         startButton.title = 'Click to start analyzing job vacancies';
+    }
+
+    if (reAnalyzeButton) {
+        reAnalyzeButton.style.display = 'none';
     }
 }
 
@@ -1352,6 +1395,7 @@ async function updateVacancyTable(matches) {
             Company: vacancy.Company || vacancy.company || 'Not specified',
             Location: vacancy.Location || vacancy.location || 'Not specified',
             Experience: vacancy.Experience || vacancy.experience || 'Not specified',
+            DetectedYearsOfExperience: vacancy.DetectedYearsOfExperience || vacancy.detectedYearsOfExperience || '-',
             EnglishLevel: vacancy.EnglishLevel || vacancy.englishLevel || 'Not specified',
             Url: vacancy.Url || vacancy.url || '#'
         };
@@ -1368,6 +1412,7 @@ async function updateVacancyTable(matches) {
             <td>${normalizedVacancy.Company}</td>
             <td>${normalizedVacancy.Location}</td>
             <td>${normalizedVacancy.Experience}</td>
+            <td><span class="badge bg-secondary">${normalizedVacancy.DetectedYearsOfExperience}</span></td>
             <td>${normalizedVacancy.EnglishLevel}</td>
             <td><span class="badge bg-primary">${formattedScore}%</span></td>
             <td>

@@ -38,6 +38,8 @@ public class VacancyEntity
 
     public ExperienceLevel? DetectedExperienceLevel { get; set; }
 
+    public string? DetectedYearsOfExperience { get; set; }
+
     public EnglishLevel? DetectedEnglishLevel { get; set; }
 
     public bool? IsModernStack { get; set; }

@@ -133,6 +133,7 @@ public class VacancyStorageService : IVacancyStorageService
 
         vacancy.VacancyCategory = analysis.VacancyCategory;
         vacancy.DetectedExperienceLevel = analysis.DetectedExperienceLevel;
+        vacancy.DetectedYearsOfExperience = analysis.DetectedYearsOfExperience;
         vacancy.DetectedEnglishLevel = analysis.DetectedEnglishLevel;
         vacancy.IsModernStack = analysis.IsModernStack;
         vacancy.IsMiddleLevel = analysis.IsMiddleLevel;
@@ -244,5 +245,27 @@ public class VacancyStorageService : IVacancyStorageService
     public async Task<int> GetActiveVacancyCountAsync()
     {
         return await _context.Vacancies.CountAsync(v => v.IsActive);
+    }
+
+    public async Task ResetAnalysisDataAsync()
+    {
+        var analysisCount = await _context.Vacancies
+            .Where(v => v.LastAnalyzedAt != null)
+            .ExecuteUpdateAsync(v => v
+                .SetProperty(x => x.VacancyCategory, (VacancyCategory?)null)
+                .SetProperty(x => x.DetectedExperienceLevel, (ExperienceLevel?)null)
+                .SetProperty(x => x.DetectedYearsOfExperience, (string?)null)
+                .SetProperty(x => x.DetectedEnglishLevel, (EnglishLevel?)null)
+                .SetProperty(x => x.IsModernStack, (bool?)null)
+                .SetProperty(x => x.IsMiddleLevel, (bool?)null)
+                .SetProperty(x => x.HasAcceptableEnglish, (bool?)null)
+                .SetProperty(x => x.HasNoTimeTracker, (bool?)null)
+                .SetProperty(x => x.IsBackendSuitable, (bool?)null)
+                .SetProperty(x => x.AnalysisReason, (string?)null)
+                .SetProperty(x => x.MatchScore, (int?)null)
+                .SetProperty(x => x.DetectedTechnologies, (string?)null)
+                .SetProperty(x => x.LastAnalyzedAt, (DateTime?)null));
+
+        _logger.LogInformation("🔄 Reset analysis data for {Count} vacancies", analysisCount);
     }
 }

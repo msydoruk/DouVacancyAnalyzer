@@ -17,6 +17,9 @@ public class VacancyAnalysisResult
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ExperienceLevel DetectedExperienceLevel { get; set; } = ExperienceLevel.Unspecified;
 
+    // Detected years of experience (e.g., "2-3", "3+", "5", etc.)
+    public string? DetectedYearsOfExperience { get; set; }
+
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public EnglishLevel DetectedEnglishLevel { get; set; } = EnglishLevel.Unspecified;
 
