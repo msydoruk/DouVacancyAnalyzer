@@ -122,8 +122,10 @@ connection.on("AnalysisStarted", function () {
     startButton.disabled = true;
     startButton.innerHTML = `<i class="fas fa-spinner fa-spin me-2"></i>Analysis in progress...`;
     reAnalyzeButton.disabled = true;
+    reAnalyzeButton.style.display = 'none';
 
     cancelButton.style.display = 'inline-block';
+    cancelButton.disabled = false;
     progressSection.style.display = 'block';
     resultsSection.style.display = 'none';
     progressLog.style.display = 'block';
@@ -164,6 +166,14 @@ connection.on("AnalysisCompleted", function (data) {
     }
 
     addLogEntry(window.localization.analysisCompleted, 'completed');
+
+    // Reset buttons immediately
+    startButton.disabled = false;
+    startButton.innerHTML = '<i class="fas fa-play me-2"></i>Start Analysis';
+    reAnalyzeButton.disabled = false;
+    reAnalyzeButton.style.display = 'inline-block';
+    cancelButton.style.display = 'none';
+    cancelButton.disabled = true;
 
     setTimeout(async () => {
         progressSection.style.display = 'none';
@@ -220,7 +230,13 @@ connection.on("AnalysisError", function (error) {
     }
 
     addLogEntry(`❌ ${window.localization.error.replace('{0}', error)}`, 'error');
-    resetButtons();
+
+    // Reset buttons on error
+    startButton.disabled = false;
+    startButton.innerHTML = '<i class="fas fa-play me-2"></i>Start Analysis';
+    reAnalyzeButton.disabled = false;
+    cancelButton.style.display = 'none';
+    cancelButton.disabled = true;
 });
 
 function startAnalysis() {
@@ -340,7 +356,13 @@ function cancelAnalysis() {
     }
 
     addLogEntry('Analysis cancelled by user', 'error');
-    resetButtons();
+
+    // Reset buttons immediately on cancel
+    startButton.disabled = false;
+    startButton.innerHTML = '<i class="fas fa-play me-2"></i>Start Analysis';
+    reAnalyzeButton.disabled = false;
+    cancelButton.style.display = 'none';
+    cancelButton.disabled = true;
 
     setTimeout(() => {
         progressSection.style.display = 'none';
@@ -1044,6 +1066,8 @@ function showLoadingState() {
 function hideControlPanel() {
     // Don't hide completely, just show that data is loaded
     const startButton = document.getElementById('startAnalysis');
+    const reAnalyzeButton = document.getElementById('reAnalyzeExisting');
+    const cancelButton = document.getElementById('cancelAnalysis');
     const loadingMessage = document.getElementById('loadingMessage');
 
     if (loadingMessage) {
@@ -1052,14 +1076,25 @@ function hideControlPanel() {
 
     if (startButton) {
         startButton.disabled = false;
-        startButton.innerHTML = '<i class="fas fa-refresh me-2"></i>Run New Analysis';
+        startButton.innerHTML = '<i class="fas fa-play me-2"></i>Start Analysis';
         startButton.title = 'Click to run a new analysis and update the results';
+    }
+
+    if (reAnalyzeButton) {
+        reAnalyzeButton.disabled = false;
+        reAnalyzeButton.style.display = 'inline-block';
+    }
+
+    if (cancelButton) {
+        cancelButton.style.display = 'none';
+        cancelButton.disabled = true;
     }
 }
 
 function showControlPanel() {
     const startButton = document.getElementById('startAnalysis');
     const reAnalyzeButton = document.getElementById('reAnalyzeExisting');
+    const cancelButton = document.getElementById('cancelAnalysis');
     const loadingMessage = document.getElementById('loadingMessage');
 
     if (loadingMessage) {
@@ -1073,7 +1108,13 @@ function showControlPanel() {
     }
 
     if (reAnalyzeButton) {
-        reAnalyzeButton.style.display = 'none';
+        reAnalyzeButton.disabled = false;
+        reAnalyzeButton.style.display = 'inline-block';
+    }
+
+    if (cancelButton) {
+        cancelButton.style.display = 'none';
+        cancelButton.disabled = true;
     }
 }
 

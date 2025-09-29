@@ -8,7 +8,8 @@
       "Bash(sqlite3:*)",
       "Bash(dotnet ef migrations add:*)",
       "Bash(taskkill:*)",
-      "Bash(dotnet ef database:*)"
+      "Bash(dotnet ef database:*)",
+      "WebFetch(domain:jobs.dou.ua)"
     ],
     "deny": [],
     "ask": []
