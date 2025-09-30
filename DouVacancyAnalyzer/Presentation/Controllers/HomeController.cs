@@ -259,8 +259,8 @@ public class HomeController : Controller
             // Convert to VacancyMatch objects for compatibility with existing frontend
             var matches = vacanciesWithAnalysis.Where(v => v.MatchScore.HasValue).Select(v =>
             {
-                _logger.LogInformation("Creating match for vacancy: {Title}, IsModernStack: {IsModernStack}, IsMiddleLevel: {IsMiddleLevel}",
-                    v.Title, v.IsModernStack, v.IsMiddleLevel);
+                _logger.LogInformation("Creating match for vacancy: {Title}, IsModernStack: {IsModernStack}, IsMiddleLevel: {IsMiddleLevel}, DetectedYears: {Years}",
+                    v.Title, v.IsModernStack, v.IsMiddleLevel, v.DetectedYearsOfExperience);
 
                 return new VacancyMatch
                 {
@@ -269,6 +269,7 @@ public class HomeController : Controller
                     {
                         VacancyCategory = v.VacancyCategory ?? VacancyCategory.Other,
                         DetectedExperienceLevel = v.DetectedExperienceLevel ?? ExperienceLevel.Unspecified,
+                        DetectedYearsOfExperience = v.DetectedYearsOfExperience,
                         DetectedEnglishLevel = v.DetectedEnglishLevel ?? EnglishLevel.Unspecified,
                         IsModernStack = v.IsModernStack,
                         IsMiddleLevel = v.IsMiddleLevel,
@@ -353,6 +354,7 @@ public class HomeController : Controller
                 {
                     VacancyCategory = v.VacancyCategory ?? VacancyCategory.Other,
                     DetectedExperienceLevel = v.DetectedExperienceLevel ?? ExperienceLevel.Unspecified,
+                    DetectedYearsOfExperience = v.DetectedYearsOfExperience,
                     DetectedEnglishLevel = v.DetectedEnglishLevel ?? EnglishLevel.Unspecified,
                     IsModernStack = v.IsModernStack,
                     IsMiddleLevel = v.IsMiddleLevel,

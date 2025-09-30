@@ -713,14 +713,21 @@ function renderModernStackPage() {
 
     container.innerHTML = `
         <div class="row">
-            ${pageVacancies.map(match => `
+            ${pageVacancies.map(match => {
+                const experience = match.Analysis?.DetectedExperienceLevel || match.Analysis?.detectedExperienceLevel || match.Vacancy.Experience || match.Vacancy.experience || 'Not specified';
+                const years = match.Analysis?.DetectedYearsOfExperience || match.Analysis?.detectedYearsOfExperience || '-';
+                const englishLevel = match.Analysis?.DetectedEnglishLevel || match.Analysis?.detectedEnglishLevel || match.Vacancy.EnglishLevel || match.Vacancy.englishLevel || 'Not specified';
+
+                return `
                 <div class="col-md-6 mb-3">
                     <div class="modern-stack-item">
-                        <h6>${match.Vacancy.Title}</h6>
+                        <h6 class="fw-bold">${match.Vacancy.Title}</h6>
                         <p class="mb-2">
                             <strong>Company:</strong> ${match.Vacancy.Company}<br>
-                            <strong>Location:</strong> ${match.Vacancy.Location}<br>
-                            <strong>Experience:</strong> ${match.Vacancy.Experience || 'Not specified'}
+                            <i class="fas fa-map-marker-alt text-muted me-1"></i><strong>Location:</strong> ${match.Vacancy.Location}<br>
+                            <strong>Experience:</strong> <span class="badge bg-info">${experience}</span>
+                            <strong>Years:</strong> <span class="badge bg-secondary">${years}</span><br>
+                            <strong>English:</strong> <span class="badge bg-success">${englishLevel}</span>
                         </p>
                         <div class="mb-2">
                             <strong>Technologies:</strong><br>
@@ -734,12 +741,13 @@ function renderModernStackPage() {
                         <div class="d-flex justify-content-between align-items-center">
                             <span class="badge bg-success">${Math.round(match.Analysis.MatchScore || 0)}% match</span>
                             <a href="${match.Vacancy.Url}" target="_blank" class="btn btn-sm btn-outline-primary">
-                                <i class="fas fa-external-link-alt me-1"></i>View Job
+                                <i class="fas fa-external-link-alt me-1"></i>View
                             </a>
                         </div>
                     </div>
                 </div>
-            `).join('')}
+            `;
+            }).join('')}
         </div>
     `;
 
@@ -1435,31 +1443,34 @@ async function updateVacancyTable(matches) {
             Title: vacancy.Title || vacancy.title || 'Not specified',
             Company: vacancy.Company || vacancy.company || 'Not specified',
             Location: vacancy.Location || vacancy.location || 'Not specified',
-            Experience: vacancy.Experience || vacancy.experience || 'Not specified',
-            DetectedYearsOfExperience: vacancy.DetectedYearsOfExperience || vacancy.detectedYearsOfExperience || '-',
-            EnglishLevel: vacancy.EnglishLevel || vacancy.englishLevel || 'Not specified',
+            Experience: analysis?.DetectedExperienceLevel || analysis?.detectedExperienceLevel || vacancy.Experience || vacancy.experience || 'Not specified',
+            DetectedYearsOfExperience: analysis?.DetectedYearsOfExperience || analysis?.detectedYearsOfExperience || '-',
+            EnglishLevel: analysis?.DetectedEnglishLevel || analysis?.detectedEnglishLevel || vacancy.EnglishLevel || vacancy.englishLevel || 'Not specified',
             Url: vacancy.Url || vacancy.url || '#'
         };
 
         console.log(`📝 Processing vacancy ${index + 1}: ${normalizedVacancy.Title}`);
+        console.log(`   Years: ${normalizedVacancy.DetectedYearsOfExperience}, Analysis:`, analysis);
+        console.log(`   Analysis.DetectedYearsOfExperience:`, analysis?.DetectedYearsOfExperience);
+        console.log(`   analysis.detectedYearsOfExperience:`, analysis?.detectedYearsOfExperience);
 
         const matchScore = analysis?.MatchScore || analysis?.matchScore || 0;
         const formattedScore = Math.round(matchScore);
 
         const row = document.createElement('tr');
+        row.className = 'align-middle';
         row.innerHTML = `
-            <td>${index + 1}</td>
-            <td>${normalizedVacancy.Title}</td>
+            <td><span class="badge bg-primary">${index + 1}</span></td>
+            <td class="fw-bold">${normalizedVacancy.Title}</td>
             <td>${normalizedVacancy.Company}</td>
-            <td>${normalizedVacancy.Location}</td>
-            <td>${normalizedVacancy.Experience}</td>
+            <td><i class="fas fa-map-marker-alt text-muted me-1"></i>${normalizedVacancy.Location}</td>
+            <td><span class="badge bg-info">${normalizedVacancy.Experience}</span></td>
             <td><span class="badge bg-secondary">${normalizedVacancy.DetectedYearsOfExperience}</span></td>
-            <td>${normalizedVacancy.EnglishLevel}</td>
+            <td><span class="badge bg-success">${normalizedVacancy.EnglishLevel}</span></td>
             <td><span class="badge bg-primary">${formattedScore}%</span></td>
             <td>
-                <a href="${normalizedVacancy.Url}" target="_blank" class="btn btn-sm btn-outline-primary">
-                    <i class="fas fa-external-link-alt me-1"></i>
-                    ${window.localization?.viewVacancy || 'View'}
+                <a href="${normalizedVacancy.Url}" target="_blank" class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-external-link-alt me-1"></i>View
                 </a>
             </td>
             <td></td>
