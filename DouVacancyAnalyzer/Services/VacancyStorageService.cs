@@ -99,6 +99,16 @@ public class VacancyStorageService : IVacancyStorageService
                 existing.Salary = vacancy.Salary;
                 existing.IsRemote = vacancy.IsRemote;
                 existing.IsNew = false; // Mark as not new since it already existed
+
+                // Update description if new one is longer (full description loaded)
+                if (!string.IsNullOrEmpty(vacancy.Description) &&
+                    vacancy.Description.Length > existing.Description.Length)
+                {
+                    _logger.LogInformation("📝 Updating description from {OldLength} to {NewLength} chars for {Title}",
+                        existing.Description.Length, vacancy.Description.Length, vacancy.Title);
+                    existing.Description = vacancy.Description;
+                }
+
                 await _context.SaveChangesAsync();
                 savedVacancies.Add(existing);
                 _logger.LogInformation("🔄 EXISTING vacancy updated: {Title} at {Company} | ID: {Id}",

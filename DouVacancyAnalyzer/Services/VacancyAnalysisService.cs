@@ -2,8 +2,7 @@ using DouVacancyAnalyzer.Models;
 using DouVacancyAnalyzer.Data;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using OpenAI;
-using OpenAI.Chat;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
@@ -12,31 +11,31 @@ namespace DouVacancyAnalyzer.Services;
 
 public class VacancyAnalysisService : IVacancyAnalysisService
 {
-    private readonly OpenAIClient _openAiClient;
+    private readonly IAiClient _aiClient;
     private readonly ILogger<VacancyAnalysisService> _logger;
-    private readonly OpenAiSettings _openAiSettings;
-    private readonly VacancyDbContext _dbContext;
+    private readonly AnalysisPrompts _prompts;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public VacancyAnalysisService(
-        OpenAIClient openAiClient,
+        IAiClient aiClient,
         ILogger<VacancyAnalysisService> logger,
-        IOptions<OpenAiSettings> openAiSettings,
-        VacancyDbContext dbContext)
+        IOptions<AnalysisPrompts> prompts,
+        IServiceScopeFactory scopeFactory)
     {
-        _openAiClient = openAiClient;
+        _aiClient = aiClient;
         _logger = logger;
-        _openAiSettings = openAiSettings.Value;
-        _dbContext = dbContext;
+        _prompts = prompts.Value;
+        _scopeFactory = scopeFactory;
     }
 
     public async Task<VacancyAnalysisResult> AnalyzeVacancyAsync(Vacancy vacancy, CancellationToken cancellationToken = default)
     {
         try
         {
-            if (_openAiClient == null)
+            if (_aiClient == null)
             {
-                _logger.LogError("OpenAI client not available - AI analysis is required");
-                throw new InvalidOperationException("AI analysis is required but OpenAI client is not configured");
+                _logger.LogError("AI client not available - AI analysis is required");
+                throw new InvalidOperationException("AI analysis is required but AI client is not configured");
             }
 
             var aiAnalysis = await PerformMultiStageAnalysisAsync(vacancy, cancellationToken);
@@ -87,7 +86,8 @@ public class VacancyAnalysisService : IVacancyAnalysisService
     {
         try
         {
-            _logger.LogInformation("Starting multi-stage analysis for vacancy: {Title}", vacancy.Title);
+            _logger.LogInformation("Starting multi-stage analysis for vacancy: {Title} (Description length: {Length} chars)",
+                vacancy.Title, vacancy.Description?.Length ?? 0);
 
             // Stage 1: Category Analysis
             var categoryResult = await PerformCategoryAnalysisAsync(vacancy, cancellationToken);
@@ -141,23 +141,37 @@ public class VacancyAnalysisService : IVacancyAnalysisService
         return null;
     }
 
+    private string CleanJsonString(string jsonString)
+    {
+        // Replace unescaped newlines and other control characters within JSON strings
+        // This is a simple approach - we'll use regex to find string values and escape them
+        return System.Text.RegularExpressions.Regex.Replace(
+            jsonString,
+            @":\s*""([^""]*?)""",
+            m => {
+                var value = m.Groups[1].Value;
+                // Escape newlines, carriage returns, tabs
+                value = value.Replace("\n", "\\n")
+                            .Replace("\r", "\\r")
+                            .Replace("\t", "\\t");
+                return $": \"{value}\"";
+            },
+            System.Text.RegularExpressions.RegexOptions.Singleline
+        );
+    }
+
     private async Task<CategoryAnalysisResult?> PerformCategoryAnalysisAsync(Vacancy vacancy, CancellationToken cancellationToken)
     {
         try
         {
-            var userPrompt = _openAiSettings.Prompts.CategoryAnalysis.UserPromptTemplate
+            var userPrompt = _prompts.CategoryAnalysis.UserPromptTemplate
                 .Replace("{title}", vacancy.Title)
                 .Replace("{description}", vacancy.Description);
 
-            var chatClient = _openAiClient.GetChatClient(_openAiSettings.Model);
-            var messages = new List<ChatMessage>
-            {
-                ChatMessage.CreateSystemMessage(_openAiSettings.Prompts.CategoryAnalysis.SystemPrompt),
-                ChatMessage.CreateUserMessage(userPrompt)
-            };
-
-            var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken);
-            var responseText = response.Value.Content[0].Text;
+            var responseText = await _aiClient.CompleteChatAsync(
+                _prompts.CategoryAnalysis.SystemPrompt,
+                userPrompt,
+                cancellationToken);
 
             var jsonStart = responseText.IndexOf('{');
             var jsonEnd = responseText.LastIndexOf('}');
@@ -165,6 +179,7 @@ public class VacancyAnalysisService : IVacancyAnalysisService
             if (jsonStart >= 0 && jsonEnd > jsonStart)
             {
                 var jsonString = responseText.Substring(jsonStart, jsonEnd - jsonStart + 1);
+                jsonString = CleanJsonString(jsonString);
 
                 try
                 {
@@ -195,19 +210,14 @@ public class VacancyAnalysisService : IVacancyAnalysisService
     {
         try
         {
-            var userPrompt = _openAiSettings.Prompts.TechnologyAnalysis.UserPromptTemplate
+            var userPrompt = _prompts.TechnologyAnalysis.UserPromptTemplate
                 .Replace("{title}", vacancy.Title)
                 .Replace("{description}", vacancy.Description);
 
-            var chatClient = _openAiClient.GetChatClient(_openAiSettings.Model);
-            var messages = new List<ChatMessage>
-            {
-                ChatMessage.CreateSystemMessage(_openAiSettings.Prompts.TechnologyAnalysis.SystemPrompt),
-                ChatMessage.CreateUserMessage(userPrompt)
-            };
-
-            var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken);
-            var responseText = response.Value.Content[0].Text;
+            var responseText = await _aiClient.CompleteChatAsync(
+                _prompts.TechnologyAnalysis.SystemPrompt,
+                userPrompt,
+                cancellationToken);
 
             var jsonStart = responseText.IndexOf('{');
             var jsonEnd = responseText.LastIndexOf('}');
@@ -215,6 +225,8 @@ public class VacancyAnalysisService : IVacancyAnalysisService
             if (jsonStart >= 0 && jsonEnd > jsonStart)
             {
                 var jsonString = responseText.Substring(jsonStart, jsonEnd - jsonStart + 1);
+                jsonString = CleanJsonString(jsonString);
+
                 return JsonSerializer.Deserialize<TechnologyAnalysisResult>(jsonString, new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true
@@ -233,20 +245,15 @@ public class VacancyAnalysisService : IVacancyAnalysisService
     {
         try
         {
-            var userPrompt = _openAiSettings.Prompts.ExperienceAnalysis.UserPromptTemplate
+            var userPrompt = _prompts.ExperienceAnalysis.UserPromptTemplate
                 .Replace("{title}", vacancy.Title)
-                .Replace("{experience}", vacancy.Experience)
+                .Replace("{experience}", "") // No longer parsing experience from Vacancy
                 .Replace("{description}", vacancy.Description);
 
-            var chatClient = _openAiClient.GetChatClient(_openAiSettings.Model);
-            var messages = new List<ChatMessage>
-            {
-                ChatMessage.CreateSystemMessage(_openAiSettings.Prompts.ExperienceAnalysis.SystemPrompt),
-                ChatMessage.CreateUserMessage(userPrompt)
-            };
-
-            var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken);
-            var responseText = response.Value.Content[0].Text;
+            var responseText = await _aiClient.CompleteChatAsync(
+                _prompts.ExperienceAnalysis.SystemPrompt,
+                userPrompt,
+                cancellationToken);
 
             _logger.LogDebug("🤖 Experience AI Response for '{Title}': {Response}",
                 vacancy.Title.Length > 50 ? vacancy.Title[..50] + "..." : vacancy.Title,
@@ -258,6 +265,7 @@ public class VacancyAnalysisService : IVacancyAnalysisService
             if (jsonStart >= 0 && jsonEnd > jsonStart)
             {
                 var jsonString = responseText.Substring(jsonStart, jsonEnd - jsonStart + 1);
+                jsonString = CleanJsonString(jsonString);
 
                 try
                 {
@@ -286,20 +294,15 @@ public class VacancyAnalysisService : IVacancyAnalysisService
     {
         try
         {
-            var userPrompt = _openAiSettings.Prompts.EnglishAnalysis.UserPromptTemplate
+            var userPrompt = _prompts.EnglishAnalysis.UserPromptTemplate
                 .Replace("{title}", vacancy.Title)
-                .Replace("{englishLevel}", vacancy.EnglishLevel)
+                .Replace("{englishLevel}", "") // No longer parsing English level from Vacancy
                 .Replace("{description}", vacancy.Description);
 
-            var chatClient = _openAiClient.GetChatClient(_openAiSettings.Model);
-            var messages = new List<ChatMessage>
-            {
-                ChatMessage.CreateSystemMessage(_openAiSettings.Prompts.EnglishAnalysis.SystemPrompt),
-                ChatMessage.CreateUserMessage(userPrompt)
-            };
-
-            var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken);
-            var responseText = response.Value.Content[0].Text;
+            var responseText = await _aiClient.CompleteChatAsync(
+                _prompts.EnglishAnalysis.SystemPrompt,
+                userPrompt,
+                cancellationToken);
 
             var jsonStart = responseText.IndexOf('{');
             var jsonEnd = responseText.LastIndexOf('}');
@@ -307,6 +310,7 @@ public class VacancyAnalysisService : IVacancyAnalysisService
             if (jsonStart >= 0 && jsonEnd > jsonStart)
             {
                 var jsonString = responseText.Substring(jsonStart, jsonEnd - jsonStart + 1);
+                jsonString = CleanJsonString(jsonString);
 
                 try
                 {
@@ -335,21 +339,16 @@ public class VacancyAnalysisService : IVacancyAnalysisService
     {
         try
         {
-            var userPrompt = _openAiSettings.Prompts.SuitabilityAnalysis.UserPromptTemplate
+            var userPrompt = _prompts.SuitabilityAnalysis.UserPromptTemplate
                 .Replace("{title}", vacancy.Title)
                 .Replace("{company}", vacancy.Company)
                 .Replace("{description}", vacancy.Description)
                 .Replace("{location}", vacancy.Location);
 
-            var chatClient = _openAiClient.GetChatClient(_openAiSettings.Model);
-            var messages = new List<ChatMessage>
-            {
-                ChatMessage.CreateSystemMessage(_openAiSettings.Prompts.SuitabilityAnalysis.SystemPrompt),
-                ChatMessage.CreateUserMessage(userPrompt)
-            };
-
-            var response = await chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken);
-            var responseText = response.Value.Content[0].Text;
+            var responseText = await _aiClient.CompleteChatAsync(
+                _prompts.SuitabilityAnalysis.SystemPrompt,
+                userPrompt,
+                cancellationToken);
 
             var jsonStart = responseText.IndexOf('{');
             var jsonEnd = responseText.LastIndexOf('}');
@@ -357,10 +356,20 @@ public class VacancyAnalysisService : IVacancyAnalysisService
             if (jsonStart >= 0 && jsonEnd > jsonStart)
             {
                 var jsonString = responseText.Substring(jsonStart, jsonEnd - jsonStart + 1);
-                return JsonSerializer.Deserialize<SuitabilityAnalysisResult>(jsonString, new JsonSerializerOptions
+                jsonString = CleanJsonString(jsonString);
+
+                try
                 {
-                    PropertyNameCaseInsensitive = true
-                });
+                    return JsonSerializer.Deserialize<SuitabilityAnalysisResult>(jsonString, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogWarning(ex, "Failed to deserialize SuitabilityAnalysisResult JSON: {JsonString}", jsonString);
+                    return ParseSuitabilityAnalysisManually(jsonString);
+                }
             }
         }
         catch (Exception ex)
@@ -487,131 +496,101 @@ public class VacancyAnalysisService : IVacancyAnalysisService
         CancellationToken cancellationToken = default)
     {
         var totalVacancies = vacancies.Count;
-        _logger.LogInformation("🚀 Starting optimized parallel analysis of {Count} vacancies", totalVacancies);
-
-        // Create semaphore to limit concurrent API calls (avoid rate limits)
-        var maxConcurrency = Math.Min(3, Math.Max(1, totalVacancies / 5)); // Max 3 concurrent, adaptive based on count
-        using var semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
+        _logger.LogInformation("🚀 Starting sequential analysis of {Count} vacancies", totalVacancies);
 
         var allMatches = new List<VacancyMatch>();
         var allAnalyses = new List<VacancyAnalysisResult>();
         var matches = new List<VacancyMatch>();
         var processedCount = 0;
-        var lockObject = new object();
 
-        await progressCallback("🔄 Starting parallel analysis...", 30);
+        await progressCallback("🔄 Starting sequential analysis...", 30);
 
-        // Process vacancies in parallel with rate limiting
-        var tasks = vacancies.Select(async (vacancy, index) =>
+        // Process vacancies sequentially
+        for (int index = 0; index < vacancies.Count; index++)
         {
-            await semaphore.WaitAsync(cancellationToken);
+            var vacancy = vacancies[index];
+            var truncatedTitle = vacancy.Title.Length > 50
+                ? vacancy.Title.Substring(0, 47) + "..."
+                : vacancy.Title;
+
+            _logger.LogInformation("🤖 Analyzing vacancy {Index}/{Total}: {Title}",
+                index + 1, totalVacancies, truncatedTitle);
+
             try
             {
-                var truncatedTitle = vacancy.Title.Length > 50
-                    ? vacancy.Title.Substring(0, 47) + "..."
-                    : vacancy.Title;
+                var analysis = await AnalyzeVacancyAsync(vacancy, cancellationToken);
 
-                _logger.LogInformation("🤖 Analyzing vacancy {Index}/{Total}: {Title}",
-                    index + 1, totalVacancies, truncatedTitle);
-
+                // Save to database using a new scope
                 try
                 {
-                    var analysis = await AnalyzeVacancyAsync(vacancy, cancellationToken);
+                    using var scope = _scopeFactory.CreateScope();
+                    var dbContext = scope.ServiceProvider.GetRequiredService<VacancyDbContext>();
 
-                    // Save to database in background (non-blocking)
-                    _ = Task.Run(async () =>
+                    var dbVacancy = await dbContext.Vacancies
+                        .FirstOrDefaultAsync(v => v.Url == vacancy.Url, cancellationToken);
+
+                    if (dbVacancy != null)
                     {
-                        try
-                        {
-                            var dbVacancy = await _dbContext.Vacancies
-                                .FirstOrDefaultAsync(v => v.Url == vacancy.Url, cancellationToken);
-
-                            if (dbVacancy != null)
-                            {
-                                await UpdateVacancyAnalysisInDb(dbVacancy, analysis);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Failed to save analysis for {Title}", vacancy.Title);
-                        }
-                    }, cancellationToken);
-
-                    var match = new VacancyMatch
-                    {
-                        Vacancy = vacancy,
-                        Analysis = analysis
-                    };
-
-                    // Thread-safe operations
-                    lock (lockObject)
-                    {
-                        allAnalyses.Add(analysis);
-                        allMatches.Add(match);
-
-                        if (IsVacancyMatch(analysis))
-                        {
-                            matches.Add(match);
-                        }
-
-                        processedCount++;
-                        var progressPercent = 30 + (int)((processedCount / (double)totalVacancies) * 30);
-
-                        // Update progress every few items
-                        if (processedCount % Math.Max(1, totalVacancies / 20) == 0 || processedCount == totalVacancies)
-                        {
-                            _ = progressCallback($"🤖 Analyzed {processedCount}/{totalVacancies}: {truncatedTitle}", progressPercent);
-                        }
+                        await UpdateVacancyAnalysisInDbWithContext(dbContext, dbVacancy, analysis);
                     }
-
-                    return match;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "❌ Failed to analyze vacancy {Index}/{Total}: {Title}",
-                        index + 1, totalVacancies, vacancy.Title);
-
-                    var fallbackAnalysis = new VacancyAnalysisResult
-                    {
-                        VacancyCategory = VacancyCategory.Other,
-                        DetectedExperienceLevel = ExperienceLevel.Unspecified,
-                        DetectedEnglishLevel = EnglishLevel.Unspecified,
-                        IsModernStack = false,
-                        IsMiddleLevel = false,
-                        HasAcceptableEnglish = false,
-                        HasNoTimeTracker = true,
-                        IsBackendSuitable = false,
-                        AnalysisReason = $"Analysis failed: {ex.Message}",
-                        MatchScore = 0,
-                        DetectedTechnologies = new List<string>()
-                    };
-
-                    var fallbackMatch = new VacancyMatch
-                    {
-                        Vacancy = vacancy,
-                        Analysis = fallbackAnalysis
-                    };
-
-                    lock (lockObject)
-                    {
-                        allAnalyses.Add(fallbackAnalysis);
-                        allMatches.Add(fallbackMatch);
-                        processedCount++;
-                    }
-
-                    return fallbackMatch;
+                    _logger.LogWarning(ex, "Failed to save analysis for {Title}", vacancy.Title);
                 }
+
+                var match = new VacancyMatch
+                {
+                    Vacancy = vacancy,
+                    Analysis = analysis
+                };
+
+                allAnalyses.Add(analysis);
+                allMatches.Add(match);
+
+                if (IsVacancyMatch(analysis))
+                {
+                    matches.Add(match);
+                }
+
+                processedCount++;
+                var progressPercent = 30 + (int)((processedCount / (double)totalVacancies) * 60);
+
+                await progressCallback($"🤖 Analyzed {processedCount}/{totalVacancies}: {truncatedTitle}", progressPercent);
             }
-            finally
+            catch (Exception ex)
             {
-                semaphore.Release();
+                _logger.LogError(ex, "❌ Failed to analyze vacancy {Index}/{Total}: {Title}",
+                    index + 1, totalVacancies, vacancy.Title);
+
+                var fallbackAnalysis = new VacancyAnalysisResult
+                {
+                    VacancyCategory = VacancyCategory.Other,
+                    DetectedExperienceLevel = ExperienceLevel.Unspecified,
+                    DetectedEnglishLevel = EnglishLevel.Unspecified,
+                    IsModernStack = false,
+                    IsMiddleLevel = false,
+                    HasAcceptableEnglish = false,
+                    HasNoTimeTracker = true,
+                    IsBackendSuitable = false,
+                    AnalysisReason = $"Analysis failed: {ex.Message}",
+                    MatchScore = 0,
+                    DetectedTechnologies = new List<string>()
+                };
+
+                var fallbackMatch = new VacancyMatch
+                {
+                    Vacancy = vacancy,
+                    Analysis = fallbackAnalysis
+                };
+
+                allAnalyses.Add(fallbackAnalysis);
+                allMatches.Add(fallbackMatch);
+                processedCount++;
             }
-        });
+        }
 
-        // Wait for all tasks to complete
-        await Task.WhenAll(tasks);
-
-        _logger.LogInformation("✅ Parallel analysis completed: {Processed}/{Total} vacancies processed, {Matches} matches found",
+        _logger.LogInformation("✅ Sequential analysis completed: {Processed}/{Total} vacancies processed, {Matches} matches found",
             processedCount, totalVacancies, matches.Count);
 
         var report = new AnalysisReport
@@ -763,6 +742,14 @@ public class VacancyAnalysisService : IVacancyAnalysisService
 
     private async Task UpdateVacancyAnalysisInDb(VacancyEntity dbVacancy, VacancyAnalysisResult analysis)
     {
+        using var scope = _scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<VacancyDbContext>();
+
+        await UpdateVacancyAnalysisInDbWithContext(dbContext, dbVacancy, analysis);
+    }
+
+    private async Task UpdateVacancyAnalysisInDbWithContext(VacancyDbContext dbContext, VacancyEntity dbVacancy, VacancyAnalysisResult analysis)
+    {
         dbVacancy.VacancyCategory = analysis.VacancyCategory;
         dbVacancy.DetectedExperienceLevel = analysis.DetectedExperienceLevel;
         dbVacancy.DetectedYearsOfExperience = analysis.DetectedYearsOfExperience;
@@ -777,7 +764,7 @@ public class VacancyAnalysisService : IVacancyAnalysisService
         dbVacancy.DetectedTechnologies = JsonSerializer.Serialize(analysis.DetectedTechnologies ?? new List<string>());
         dbVacancy.LastAnalyzedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync();
     }
 
     private CategoryAnalysisResult ParseCategoryAnalysisManually(string jsonString)
@@ -932,6 +919,40 @@ public class VacancyAnalysisService : IVacancyAnalysisService
                 HasAcceptableEnglish = false,
                 EnglishScore = 0,
                 Reasoning = "Failed to parse AI response"
+            };
+        }
+    }
+
+    private SuitabilityAnalysisResult ParseSuitabilityAnalysisManually(string jsonString)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(jsonString);
+            var root = doc.RootElement;
+
+            var isBackendSuitable = root.TryGetProperty("IsBackendSuitable", out var backendProp) && backendProp.GetBoolean();
+            var hasNoTimeTracker = !root.TryGetProperty("HasNoTimeTracker", out var trackerProp) || trackerProp.GetBoolean();
+            var matchScore = root.TryGetProperty("MatchScore", out var scoreProp) ? scoreProp.GetInt32() : 50;
+            var analysisReason = root.TryGetProperty("AnalysisReason", out var reasonProp) ? reasonProp.GetString() ?? "" : "";
+
+            return new SuitabilityAnalysisResult
+            {
+                IsBackendSuitable = isBackendSuitable,
+                HasNoTimeTracker = hasNoTimeTracker,
+                MatchScore = matchScore,
+                AnalysisReason = analysisReason
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Manual parsing failed for SuitabilityAnalysis: {JsonString}", jsonString);
+
+            return new SuitabilityAnalysisResult
+            {
+                IsBackendSuitable = false,
+                HasNoTimeTracker = true,
+                MatchScore = 0,
+                AnalysisReason = "Failed to parse AI response"
             };
         }
     }

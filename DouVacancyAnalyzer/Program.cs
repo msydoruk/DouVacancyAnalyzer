@@ -14,8 +14,50 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 
-builder.Services.Configure<OpenAiSettings>(builder.Configuration.GetSection("OpenAiSettings"));
+var aiProvider = builder.Configuration.GetValue<string>("AiProvider") ?? "OpenAI";
+
 builder.Services.Configure<ScrapingSettings>(builder.Configuration.GetSection("ScrapingSettings"));
+
+// Configure AI provider
+if (aiProvider.Equals("Anthropic", StringComparison.OrdinalIgnoreCase))
+{
+    var anthropicConfig = builder.Configuration.GetSection("AnthropicSettings");
+    var apiKey = anthropicConfig.GetValue<string>("ApiKey");
+    var model = anthropicConfig.GetValue<string>("Model") ?? "claude-3-5-sonnet-20241022";
+
+    if (string.IsNullOrEmpty(apiKey))
+    {
+        throw new InvalidOperationException("Anthropic API key is not configured. Please set it in appsettings.json.");
+    }
+
+    builder.Services.AddSingleton<IAiClient>(provider =>
+    {
+        var logger = provider.GetRequiredService<ILogger<AnthropicAiClient>>();
+        return new AnthropicAiClient(apiKey, model, logger);
+    });
+
+    builder.Services.Configure<AnalysisPrompts>(anthropicConfig.GetSection("Prompts"));
+}
+else
+{
+    var openAiConfig = builder.Configuration.GetSection("OpenAiSettings");
+    var apiKey = openAiConfig.GetValue<string>("ApiKey");
+    var model = openAiConfig.GetValue<string>("Model") ?? "gpt-4o-mini";
+
+    if (string.IsNullOrEmpty(apiKey))
+    {
+        throw new InvalidOperationException("OpenAI API key is not configured. Please set it in appsettings.json.");
+    }
+
+    var openAiClient = new OpenAIClient(apiKey);
+    builder.Services.AddSingleton<IAiClient>(provider =>
+    {
+        var logger = provider.GetRequiredService<ILogger<OpenAiClient>>();
+        return new OpenAiClient(openAiClient, model, logger);
+    });
+
+    builder.Services.Configure<AnalysisPrompts>(openAiConfig.GetSection("Prompts"));
+}
 
 // Add Entity Framework
 builder.Services.AddDbContext<VacancyDbContext>(options =>
@@ -37,16 +79,6 @@ builder.Services.Configure<RequestLocalizationOptions>(options =>
 });
 
 builder.Services.AddHttpClient();
-
-builder.Services.AddSingleton<OpenAIClient>(provider =>
-{
-    var config = builder.Configuration.GetSection("OpenAiSettings").Get<OpenAiSettings>();
-    if (string.IsNullOrEmpty(config?.ApiKey))
-    {
-        throw new InvalidOperationException("OpenAI API key is not configured. Please set it in appsettings.json or provide it as command line argument.");
-    }
-    return new OpenAIClient(config.ApiKey);
-});
 
 builder.Services.AddScoped<IVacancyScrapingService, VacancyScrapingService>();
 builder.Services.AddScoped<IVacancyAnalysisService, VacancyAnalysisService>();

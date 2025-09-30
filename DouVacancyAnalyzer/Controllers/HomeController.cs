@@ -230,8 +230,8 @@ public class HomeController : Controller
                 Title = v.Title,
                 Company = v.Company,
                 Location = v.Location,
-                Experience = v.Experience,
-                EnglishLevel = v.EnglishLevel,
+                Experience = v.DetectedExperienceLevel?.ToString() ?? "Unspecified",
+                EnglishLevel = v.DetectedEnglishLevel?.ToString() ?? "Unspecified",
                 Url = v.Url,
                 CreatedAt = v.CreatedAt,
                 IsAnalyzed = v.MatchScore.HasValue

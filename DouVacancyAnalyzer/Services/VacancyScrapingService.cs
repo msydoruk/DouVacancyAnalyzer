@@ -33,7 +33,7 @@ public class VacancyScrapingService : IVacancyScrapingService
 
     public async Task<List<Vacancy>> GetVacanciesAsync(CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Starting DOU.ua scraping with Selenium to get ALL vacancies");
+        _logger.LogInformation("🚀 Starting DOU.ua scraping with Selenium to get ALL vacancies [NEW VERSION WITH FULL DESCRIPTION LOADING]");
         
         var vacancies = new List<Vacancy>();
         IWebDriver? driver = null;
@@ -135,6 +135,112 @@ public class VacancyScrapingService : IVacancyScrapingService
                     var vacancy = ParseVacancyElement(element);
                     if (vacancy != null)
                     {
+                        // Load full description from vacancy page using Selenium
+                        if (!string.IsNullOrEmpty(vacancy.Url))
+                        {
+                            _logger.LogInformation("📥 Loading full description for: {Title} from {Url}", vacancy.Title, vacancy.Url);
+                            try
+                            {
+                                driver.Navigate().GoToUrl(vacancy.Url);
+
+                                // Wait for page to load - try multiple selectors
+                                try
+                                {
+                                    wait.Until(d =>
+                                        d.FindElements(By.CssSelector("div.text")).Count > 0 ||
+                                        d.FindElements(By.CssSelector("article")).Count > 0 ||
+                                        d.FindElements(By.TagName("article")).Count > 0 ||
+                                        d.FindElements(By.ClassName("vacancy-section")).Count > 0);
+                                }
+                                catch (WebDriverTimeoutException)
+                                {
+                                    _logger.LogWarning("Timeout waiting for description to load on {Url}", vacancy.Url);
+                                }
+
+                                await Task.Delay(2000, cancellationToken); // Give more time for content to render
+
+                                var pageHtml = driver.PageSource;
+                                var pageDoc = new HtmlDocument();
+                                pageDoc.LoadHtml(pageHtml);
+
+                                // Strategy: Find the vacancy title (h1) and get all content from there
+                                // Try multiple approaches to find the main content
+                                var descriptionNode = pageDoc.DocumentNode.SelectSingleNode("//div[contains(@class, 'l-vacancy')]") ??
+                                                     pageDoc.DocumentNode.SelectSingleNode("//div[contains(@class, 'b-vacancy')]") ??
+                                                     pageDoc.DocumentNode.SelectSingleNode("//main") ??
+                                                     pageDoc.DocumentNode.SelectSingleNode("//article");
+
+                                // If no specific container found, get everything after h1 (vacancy title)
+                                if (descriptionNode == null)
+                                {
+                                    var h1Node = pageDoc.DocumentNode.SelectSingleNode("//h1");
+                                    if (h1Node != null)
+                                    {
+                                        // Get parent that contains h1 and the rest of the content
+                                        descriptionNode = h1Node.ParentNode;
+                                    }
+                                }
+
+                                if (descriptionNode != null)
+                                {
+                                    // Remove unnecessary elements (navigation, sidebar, footer, ads, etc.)
+                                    var unwantedNodes = descriptionNode.SelectNodes(
+                                        ".//script | .//style | .//nav | .//header[contains(@class, 'g-header')] | " +
+                                        ".//footer | .//aside | .//div[contains(@class, 'b-sidebar')] | " +
+                                        ".//div[contains(@class, 'b-ad')] | .//div[contains(@class, 'ad-')] | " +
+                                        ".//div[@class='similar-vacancies']");
+
+                                    if (unwantedNodes != null)
+                                    {
+                                        foreach (var node in unwantedNodes)
+                                        {
+                                            node.Remove();
+                                        }
+                                    }
+
+                                    var fullDescription = WebUtility.HtmlDecode(descriptionNode.InnerText?.Trim() ?? string.Empty);
+
+                                    // Clean up multiple whitespaces and newlines
+                                    fullDescription = System.Text.RegularExpressions.Regex.Replace(fullDescription, @"\s+", " ");
+                                    fullDescription = fullDescription.Trim();
+
+                                    _logger.LogInformation("📄 Extracted {NewLength} chars (original: {OldLength} chars) for {Title}",
+                                        fullDescription.Length, vacancy.Description.Length, vacancy.Title);
+
+                                    if (!string.IsNullOrEmpty(fullDescription) && fullDescription.Length > vacancy.Description.Length)
+                                    {
+                                        vacancy.Description = fullDescription;
+                                        _logger.LogInformation("✅ Loaded {Length} characters of description for {Title}",
+                                            fullDescription.Length, vacancy.Title);
+                                    }
+                                    else
+                                    {
+                                        _logger.LogWarning("⚠️ Loaded description ({Length} chars) is not longer than original ({Original} chars)",
+                                            fullDescription.Length, vacancy.Description.Length);
+                                    }
+                                }
+                                else
+                                {
+                                    _logger.LogWarning("❌ Could not find description on page: {Url}", vacancy.Url);
+
+                                    // Save HTML for debugging
+                                    try
+                                    {
+                                        var debugPath = Path.Combine(Path.GetTempPath(), $"vacancy_{DateTime.Now:yyyyMMdd_HHmmss}.html");
+                                        File.WriteAllText(debugPath, pageHtml);
+                                        _logger.LogWarning("Saved HTML to: {Path}", debugPath);
+                                    }
+                                    catch { }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Failed to load full description from: {Url}", vacancy.Url);
+                            }
+
+                            await Task.Delay(_settings.DelayBetweenRequests, cancellationToken);
+                        }
+
                         vacancies.Add(vacancy);
                     }
                 }
@@ -167,79 +273,11 @@ public class VacancyScrapingService : IVacancyScrapingService
         return vacancies;
     }
 
-
-    private async Task<List<Vacancy>> GetVacanciesFromCategoryAsync(string category, CancellationToken cancellationToken)
-    {
-        var baseUrl = "https://jobs.dou.ua/vacancies/";
-        var url = string.IsNullOrEmpty(category) ? baseUrl : $"{baseUrl}?category={category}";
-        
-        var response = await _httpClient.GetStringAsync(url, cancellationToken);
-        var doc = new HtmlDocument();
-        doc.LoadHtml(response);
-
-        var vacancyElements = doc.DocumentNode
-            .SelectNodes("//li[contains(@class, 'l-vacancy')]") ?? 
-            Enumerable.Empty<HtmlNode>();
-
-        var vacancies = new List<Vacancy>();
-
-        foreach (var element in vacancyElements)
-        {
-            try
-            {
-                var vacancy = ParseVacancyElement(element);
-                if (vacancy != null)
-                {
-                    vacancies.Add(vacancy);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error parsing vacancy element from category {Category}", category);
-            }
-        }
-
-        return vacancies;
-    }
-
-    private async Task<List<Vacancy>> GetVacanciesFromPageAsync(int page, CancellationToken cancellationToken)
-    {
-        var url = page == 1 ? _settings.BaseUrl : $"{_settings.BaseUrl}&page={page}";
-        
-        var response = await _httpClient.GetStringAsync(url, cancellationToken);
-        var doc = new HtmlDocument();
-        doc.LoadHtml(response);
-
-        var vacancyElements = doc.DocumentNode
-            .SelectNodes("//li[contains(@class, 'l-vacancy')]") ?? 
-            Enumerable.Empty<HtmlNode>();
-
-        var vacancies = new List<Vacancy>();
-
-        foreach (var element in vacancyElements)
-        {
-            try
-            {
-                var vacancy = ParseVacancyElement(element);
-                if (vacancy != null)
-                {
-                    vacancies.Add(vacancy);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error parsing vacancy element");
-            }
-        }
-
-        return vacancies;
-    }
-
     private Vacancy? ParseVacancyElement(HtmlNode element)
     {
-        var titleNode = element.SelectSingleNode(".//a[contains(@class, 'vt')]") ?? 
+        var titleNode = element.SelectSingleNode(".//a[contains(@class, 'vt')]") ??
                        element.SelectSingleNode(".//h2//a");
-        
+
         if (titleNode == null) return null;
 
         var vacancy = new Vacancy
@@ -279,89 +317,14 @@ public class VacancyScrapingService : IVacancyScrapingService
             ParsePublishedDate(vacancy, dateNode.InnerText?.Trim() ?? string.Empty);
         }
 
-        vacancy.IsRemote = vacancy.Location.ToLowerInvariant().Contains("remote") || 
+        vacancy.IsRemote = vacancy.Location.ToLowerInvariant().Contains("remote") ||
                           vacancy.Location.ToLowerInvariant().Contains("віддалено") ||
                           vacancy.Description.ToLowerInvariant().Contains("remote");
 
-        ParseTechnologies(vacancy);
-        ParseExperienceLevel(vacancy);
-        ParseEnglishLevel(vacancy);
+        // Note: ParseTechnologies, ParseExperienceLevel, ParseEnglishLevel
+        // should be called AFTER loading full description, not here
 
         return vacancy;
-    }
-
-    private void ParseTechnologies(Vacancy vacancy)
-    {
-        var text = $"{vacancy.Title} {vacancy.Description}".ToLowerInvariant();
-        var technologies = new List<string>();
-
-        var techKeywords = new[]
-        {
-            ".net", "c#", "asp.net", "entity framework", "sql server", "postgresql", "mongodb",
-            "redis", "docker", "kubernetes", "azure", "aws", "react", "angular", "vue.js",
-            "blazor", "grpc", "graphql", "microservices", "rabbitmq", "kafka"
-        };
-
-        foreach (var tech in techKeywords)
-        {
-            if (text.Contains(tech))
-            {
-                technologies.Add(tech);
-            }
-        }
-
-        vacancy.Technologies = technologies;
-    }
-
-    private void ParseExperienceLevel(Vacancy vacancy)
-    {
-        var text = $"{vacancy.Title} {vacancy.Description}".ToLowerInvariant();
-        
-        if (text.Contains("junior") || text.Contains("джуніор"))
-        {
-            vacancy.Experience = "Junior";
-        }
-        else if (text.Contains("middle") || text.Contains("мідл") || text.Contains("middle"))
-        {
-            vacancy.Experience = "Middle";
-        }
-        else if (text.Contains("senior") || text.Contains("сеньйор") || text.Contains("lead"))
-        {
-            vacancy.Experience = "Senior";
-        }
-        else
-        {
-            vacancy.Experience = "Unknown";
-        }
-    }
-
-    private void ParseEnglishLevel(Vacancy vacancy)
-    {
-        var text = $"{vacancy.Title} {vacancy.Description}".ToLowerInvariant();
-        
-        var englishLevels = new[]
-        {
-            ("upper-intermediate", "Upper-Intermediate"),
-            ("intermediate", "Intermediate"),
-            ("pre-intermediate", "Pre-Intermediate"),
-            ("advanced", "Advanced"),
-            ("upper intermediate", "Upper-Intermediate"),
-            ("pre intermediate", "Pre-Intermediate"),
-            ("b2", "B2"),
-            ("b1", "B1"),
-            ("c1", "C1")
-        };
-
-        foreach (var (keyword, level) in englishLevels)
-        {
-            if (text.Contains(keyword))
-            {
-                vacancy.EnglishLevel = level;
-                return;
-            }
-        }
-
-        vacancy.EnglishLevel = "Not specified";
     }
 
     private void ParsePublishedDate(Vacancy vacancy, string dateText)

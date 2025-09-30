@@ -21,17 +21,11 @@ public class VacancyEntity
 
     public DateTime PublishedDate { get; set; }
 
-    public string Experience { get; set; } = string.Empty;
-
     public string Salary { get; set; } = string.Empty;
 
     public bool IsRemote { get; set; }
 
     public string Location { get; set; } = string.Empty;
-
-    public string Technologies { get; set; } = string.Empty; // JSON array stored as string
-
-    public string EnglishLevel { get; set; } = string.Empty;
 
     // Analysis results
     public VacancyCategory? VacancyCategory { get; set; }
@@ -70,19 +64,6 @@ public class VacancyEntity
 
     public Vacancy ToVacancy()
     {
-        var technologies = new List<string>();
-        if (!string.IsNullOrEmpty(Technologies))
-        {
-            try
-            {
-                technologies = System.Text.Json.JsonSerializer.Deserialize<List<string>>(Technologies) ?? new List<string>();
-            }
-            catch
-            {
-                // Ignore JSON parsing errors
-            }
-        }
-
         return new Vacancy
         {
             Title = Title,
@@ -90,18 +71,14 @@ public class VacancyEntity
             Description = Description,
             Url = Url,
             PublishedDate = PublishedDate,
-            Experience = Experience,
             Salary = Salary,
             IsRemote = IsRemote,
-            Location = Location,
-            Technologies = technologies,
-            EnglishLevel = EnglishLevel
+            Location = Location
         };
     }
 
     public static VacancyEntity FromVacancy(Vacancy vacancy)
     {
-        var technologies = System.Text.Json.JsonSerializer.Serialize(vacancy.Technologies ?? new List<string>());
         return new VacancyEntity
         {
             Title = vacancy.Title,
@@ -109,12 +86,9 @@ public class VacancyEntity
             Description = vacancy.Description,
             Url = vacancy.Url,
             PublishedDate = vacancy.PublishedDate,
-            Experience = vacancy.Experience,
             Salary = vacancy.Salary,
             IsRemote = vacancy.IsRemote,
             Location = vacancy.Location,
-            Technologies = technologies,
-            EnglishLevel = vacancy.EnglishLevel,
             CreatedAt = DateTime.UtcNow,
             IsNew = true
         };

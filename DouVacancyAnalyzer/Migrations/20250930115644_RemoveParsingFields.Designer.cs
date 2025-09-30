@@ -3,6 +3,7 @@ using System;
 using DouVacancyAnalyzer.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DouVacancyAnalyzer.Migrations
 {
     [DbContext(typeof(VacancyDbContext))]
-    partial class VacancyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250930115644_RemoveParsingFields")]
+    partial class RemoveParsingFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.11");

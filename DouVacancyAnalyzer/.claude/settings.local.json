@@ -9,7 +9,9 @@
       "Bash(dotnet ef migrations add:*)",
       "Bash(taskkill:*)",
       "Bash(dotnet ef database:*)",
-      "WebFetch(domain:jobs.dou.ua)"
+      "WebFetch(domain:jobs.dou.ua)",
+      "Bash(dotnet add package:*)",
+      "Bash(powershell:*)"
     ],
     "deny": [],
     "ask": []
