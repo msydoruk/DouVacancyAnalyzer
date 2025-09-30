@@ -1,9 +1,5 @@
-@using Microsoft.Extensions.Localization
-@inject IStringLocalizer<DouVacancyAnalyzer.SharedResources> Localizer
-@inject IStringLocalizer<DouVacancyAnalyzer.ProgressMessages> ProgressLocalizer
-
 @{
-    ViewData["Title"] = Localizer["PageTitle"];
+    ViewData["Title"] = "DOU Vacancy Analyzer";
 }
 
 <div class="row">
@@ -12,18 +8,18 @@
             <div class="card-header bg-primary text-white">
                 <h4 class="mb-0">
                     <i class="fas fa-search me-2"></i>
-                    @Localizer["MainHeader"]
+                    DOU.ua Vacancy Analyzer for .NET Backend Developers
                 </h4>
             </div>
             <div class="card-body">
                 <p class="card-text">
-                    @Localizer["Description"]
+                    Analyze job vacancies from DOU.ua and find the best matches for Middle .NET Backend developer profile.
                 </p>
                 <ul class="list-unstyled mb-4">
-                    <li><i class="fas fa-check text-success me-2"></i>@Localizer["ModernTechnologies"]</li>
-                    <li><i class="fas fa-check text-success me-2"></i>@Localizer["ExperienceLevel"]</li>
-                    <li><i class="fas fa-check text-success me-2"></i>@Localizer["EnglishLevel"]</li>
-                    <li><i class="fas fa-check text-success me-2"></i>@Localizer["NoTimeTracking"]</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Modern Technologies (.NET 6+, Core)</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Middle Level Experience (3+ years)</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Acceptable English Level (B1+)</li>
+                    <li><i class="fas fa-check text-success me-2"></i>No Time Tracking Requirements</li>
                 </ul>
 
                 <div id="loadingMessage" class="alert alert-info mb-3" style="display: none;">
@@ -57,7 +53,7 @@
             <div class="card-header">
                 <h5 class="mb-0">
                     <i class="fas fa-spinner fa-spin me-2"></i>
-                    @Localizer["AnalysisProgress"]
+                    Analysis Progress
                 </h5>
             </div>
             <div class="card-body">
@@ -67,10 +63,10 @@
                     </div>
                 </div>
                 <div id="progressMessage" class="text-muted">
-                    @Localizer["PreparingAnalysis"]
+                    Preparing analysis...
                 </div>
                 <div id="progressLog" class="mt-3" style="display: none;">
-                    <h6 class="text-muted mb-2">@Localizer["DetailedProgress"]</h6>
+                    <h6 class="text-muted mb-2">Detailed Progress</h6>
                     <div id="progressLogContent" class="progress-log-content">
                     </div>
                 </div>
@@ -86,7 +82,7 @@
             <div class="card-header bg-gradient-primary text-white">
                 <h4 class="mb-0">
                     <i class="fas fa-chart-line me-2"></i>
-                    @Localizer["QuickOverview"]
+                    Quick Overview
                 </h4>
             </div>
             <div class="card-body">
@@ -103,7 +99,7 @@
                 <div class="card-header bg-success text-white">
                     <h5 class="mb-0">
                         <i class="fas fa-chart-pie me-2"></i>
-                        @Localizer["DetailedStatistics"]
+                        Detailed Statistics
                     </h5>
                 </div>
                 <div class="card-body p-4" id="analysisStats">
@@ -117,7 +113,7 @@
                 <div class="card-header bg-info text-white">
                     <h5 class="mb-0">
                         <i class="fas fa-cogs me-2"></i>
-                        @Localizer["TechnologyAnalysis"]
+                        Technology Analysis
                     </h5>
                 </div>
                 <div class="card-body p-4" id="techStats">
@@ -132,7 +128,7 @@
             <div class="card-header bg-warning text-dark">
                 <h5 class="mb-0">
                     <i class="fas fa-chart-bar me-2"></i>
-                    @Localizer["DistributionCharts"]
+                    Distribution Charts
                 </h5>
             </div>
             <div class="card-body p-4">
@@ -162,14 +158,14 @@
                     <table class="table table-hover table-striped" id="newVacancyTable">
                         <thead class="thead-dark">
                             <tr>
-                                <th>@Localizer["Number"]</th>
-                                <th>@Localizer["JobTitle"]</th>
-                                <th>@Localizer["Company"]</th>
-                                <th>@Localizer["Location"]</th>
-                                <th>@Localizer["Experience"]</th>
-                                <th>@Localizer["English"]</th>
+                                <th>#</th>
+                                <th>Job Title</th>
+                                <th>Company</th>
+                                <th>Location</th>
+                                <th>Experience</th>
+                                <th>English</th>
                                 <th>Status</th>
-                                <th>@Localizer["Link"]</th>
+                                <th>Link</th>
                                 <th>Response Status</th>
                             </tr>
                         </thead>
@@ -210,15 +206,15 @@
                     <table class="table table-hover table-striped" id="vacancyTable">
                         <thead class="thead-dark">
                             <tr>
-                                <th>@Localizer["Number"]</th>
-                                <th>@Localizer["JobTitle"]</th>
-                                <th>@Localizer["Company"]</th>
-                                <th>@Localizer["Location"]</th>
-                                <th>@Localizer["Experience"]</th>
+                                <th>#</th>
+                                <th>Job Title</th>
+                                <th>Company</th>
+                                <th>Location</th>
+                                <th>Experience</th>
                                 <th>Years</th>
-                                <th>@Localizer["English"]</th>
-                                <th>@Localizer["Score"]</th>
-                                <th>@Localizer["Link"]</th>
+                                <th>English</th>
+                                <th>Score</th>
+                                <th>Link</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
@@ -330,35 +326,35 @@
 @section Scripts {
     <script>
         window.localization = {
-            startAnalysis: '@Localizer["StartAnalysis"]',
-            startTestAnalysis: '@Localizer["StartTestAnalysis"]',
-            analysisInProgress: '@Localizer["AnalysisInProgress"]',
-            analysisStarted: '@ProgressLocalizer["AnalysisStarted"]',
-            analysisCompleted: '@ProgressLocalizer["AnalysisCompleted"]',
-            error: '@ProgressLocalizer["Error"]',
-            preparingAnalysis: '@Localizer["PreparingAnalysis"]',
-            totalVacancies: '@Localizer["TotalVacancies"]',
-            matching: '@Localizer["Matching"]',
-            compliance: '@Localizer["Compliance"]',
-            modernTech: '@Localizer["ModernTech"]',
-            meetsCriteria: '@Localizer["MeetsCriteria"]',
-            compliancePercentage: '@Localizer["CompliancePercentage"]',
-            withModernStack: '@Localizer["WithModernStack"]',
-            middleLevel: '@Localizer["MiddleLevel"]',
-            acceptableEnglish: '@Localizer["AcceptableEnglish"]',
-            withModernTechnologies: '@Localizer["WithModernTechnologies"]',
-            withOutdatedTechnologies: '@Localizer["WithOutdatedTechnologies"]',
-            desktopApplications: '@Localizer["DesktopApplications"]',
-            frontendPositions: '@Localizer["FrontendPositions"]',
-            withTimeTracker: '@Localizer["WithTimeTracker"]',
-            experienceLevelDistribution: '@Localizer["ExperienceLevelDistribution"]',
-            aiVacancyCategorization: '@Localizer["AiVacancyCategorization"]',
-            vacancyCount: '@Localizer["VacancyCount"]',
-            junior: '@Localizer["Junior"]',
-            middle: '@Localizer["Middle"]',
-            senior: '@Localizer["Senior"]',
-            unspecified: '@Localizer["Unspecified"]',
-            viewVacancy: '@Localizer["ViewVacancy"]'
+            startAnalysis: 'Start Analysis',
+            startTestAnalysis: 'Start Test Analysis',
+            analysisInProgress: 'Analysis in Progress',
+            analysisStarted: 'Analysis Started',
+            analysisCompleted: 'Analysis Completed',
+            error: 'Error',
+            preparingAnalysis: 'Preparing Analysis',
+            totalVacancies: 'Total Vacancies',
+            matching: 'Matching',
+            compliance: 'Compliance',
+            modernTech: 'Modern Tech',
+            meetsCriteria: 'Meets Criteria',
+            compliancePercentage: 'Compliance %',
+            withModernStack: 'With Modern Stack',
+            middleLevel: 'Middle Level',
+            acceptableEnglish: 'Acceptable English',
+            withModernTechnologies: 'With Modern Technologies',
+            withOutdatedTechnologies: 'With Outdated Technologies',
+            desktopApplications: 'Desktop Applications',
+            frontendPositions: 'Frontend Positions',
+            withTimeTracker: 'With Time Tracker',
+            experienceLevelDistribution: 'Experience Level Distribution',
+            aiVacancyCategorization: 'AI Vacancy Categorization',
+            vacancyCount: 'Vacancy Count',
+            junior: 'Junior',
+            middle: 'Middle',
+            senior: 'Senior',
+            unspecified: 'Unspecified',
+            viewVacancy: 'View Vacancy'
         };
     </script>
     <script src="~/js/analysis.js"></script>

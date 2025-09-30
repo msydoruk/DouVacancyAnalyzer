@@ -1,13 +1,14 @@
-using DouVacancyAnalyzer.Hubs;
-using DouVacancyAnalyzer.Models;
-using DouVacancyAnalyzer.Services;
-using DouVacancyAnalyzer.Data;
+using DouVacancyAnalyzer.Presentation.Hubs;
+using DouVacancyAnalyzer.Core.Application.DTOs;
+using DouVacancyAnalyzer.Core.Application.Interfaces;
+using DouVacancyAnalyzer.Core.Application.Services;
+using DouVacancyAnalyzer.Core.Domain.Constants;
+using DouVacancyAnalyzer.Infrastructure.Data;
+using DouVacancyAnalyzer.Infrastructure.ExternalServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Localization;
 using Microsoft.EntityFrameworkCore;
-using System.Globalization;
 using OpenAI;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -61,22 +62,7 @@ else
 
 // Add Entity Framework
 builder.Services.AddDbContext<VacancyDbContext>(options =>
-    options.UseSqlite("Data Source=vacancies.db"));
-
-builder.Services.AddLocalization();
-
-builder.Services.Configure<RequestLocalizationOptions>(options =>
-{
-    var supportedCultures = new[]
-    {
-        new CultureInfo("uk"),
-        new CultureInfo("en")
-    };
-
-    options.DefaultRequestCulture = new Microsoft.AspNetCore.Localization.RequestCulture("uk");
-    options.SupportedCultures = supportedCultures;
-    options.SupportedUICultures = supportedCultures;
-});
+    options.UseSqlite(AnalysisConstants.DatabaseConnectionString));
 
 builder.Services.AddHttpClient();
 
@@ -87,23 +73,17 @@ builder.Services.AddScoped<IVacancyStorageService, VacancyStorageService>();
 builder.Services.AddSignalR()
     .AddJsonProtocol(options =>
     {
-        options.PayloadSerializerOptions.PropertyNamingPolicy = null; // Зберігає оригінальні назви властивостей
+        options.PayloadSerializerOptions.PropertyNamingPolicy = null;
     });
 
 builder.Services.AddControllersWithViews();
 
 var app = builder.Build();
 
-var supportedCultures = new[] { "uk", "en" };
-var localizationOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<RequestLocalizationOptions>>().Value;
-localizationOptions.ApplyCurrentCultureToResponseHeaders = true;
-
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
-
-app.UseRequestLocalization(localizationOptions);
 
 app.UseStaticFiles();
 
