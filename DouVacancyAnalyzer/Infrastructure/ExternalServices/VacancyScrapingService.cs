@@ -11,6 +11,7 @@ using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Support.UI;
 using WebDriverManager;
 using WebDriverManager.DriverConfigs.Impl;
+using WebDriverManager.Helpers;
 
 namespace DouVacancyAnalyzer.Infrastructure.ExternalServices;
 
@@ -49,7 +50,7 @@ public class VacancyScrapingService : IVacancyScrapingService
 
         try
         {
-            new DriverManager().SetUpDriver(new ChromeConfig());
+            new DriverManager().SetUpDriver(new ChromeConfig(), VersionResolveStrategy.MatchingBrowser);
             var options = new ChromeOptions();
             options.AddArguments(AnalysisConstants.ChromeHeadlessArguments);
             options.AddArguments($"--window-size={AnalysisConstants.SeleniumWindowSize}");
