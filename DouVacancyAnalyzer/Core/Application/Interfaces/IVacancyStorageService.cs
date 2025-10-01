@@ -21,4 +21,5 @@ public interface IVacancyStorageService
     Task<List<VacancyEntity>> GetActiveVacanciesAsync();
     Task<int> GetActiveVacancyCountAsync();
     Task ResetAnalysisDataAsync();
+    Task<int> UpdateVacancyActivityStatusAsync(List<string> currentVacancyUrls);
 }

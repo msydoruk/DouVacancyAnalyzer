@@ -36,7 +36,7 @@ public class VacancyScrapingService : IVacancyScrapingService
         _httpClient.DefaultRequestHeaders.Add("User-Agent", AnalysisConstants.DefaultUserAgent);
     }
 
-    public async Task<List<Vacancy>> GetVacanciesAsync(CancellationToken cancellationToken = default)
+    public async Task<(List<Vacancy> newVacancies, List<string> allVacancyUrls)> GetVacanciesAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("🚀 Starting DOU.ua scraping with Selenium to get ALL vacancies [NEW VERSION WITH FULL DESCRIPTION LOADING]");
 
@@ -44,6 +44,8 @@ public class VacancyScrapingService : IVacancyScrapingService
         var existingVacancies = await _storageService.GetAllVacanciesAsync();
         var existingUrls = existingVacancies.Select(v => v.Url).ToHashSet();
         _logger.LogInformation("📋 Found {Count} existing vacancies in database - will skip full description loading for them", existingUrls.Count);
+
+        var allVacancyUrls = new List<string>();
 
         var vacancies = new List<Vacancy>();
         IWebDriver? driver = null;
@@ -142,6 +144,9 @@ public class VacancyScrapingService : IVacancyScrapingService
                     var vacancy = ParseVacancyElement(element);
                     if (vacancy != null)
                     {
+                        // Add to all URLs list for tracking
+                        allVacancyUrls.Add(vacancy.Url);
+
                         // Skip existing vacancies completely - no scraping needed
                         if (existingUrls.Contains(vacancy.Url))
                         {
@@ -264,7 +269,8 @@ public class VacancyScrapingService : IVacancyScrapingService
                 }
             }
             
-            _logger.LogInformation("Successfully scraped {Count} vacancies from DOU.ua using Selenium", vacancies.Count);
+            _logger.LogInformation("Successfully scraped {Count} NEW vacancies from DOU.ua using Selenium", vacancies.Count);
+            _logger.LogInformation("📊 Total {AllCount} vacancies found on DOU.ua", allVacancyUrls.Count);
         }
         catch (Exception ex)
         {
@@ -283,8 +289,8 @@ public class VacancyScrapingService : IVacancyScrapingService
                 _logger.LogWarning(ex, "Error closing Chrome driver");
             }
         }
-        
-        return vacancies;
+
+        return (vacancies, allVacancyUrls);
     }
 
     private Vacancy? ParseVacancyElement(HtmlNode element)

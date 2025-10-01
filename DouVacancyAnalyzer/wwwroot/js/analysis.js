@@ -58,6 +58,7 @@ function normalizeDataKeys(data) {
             const normalizedAnalysis = analysis ? {
                 VacancyCategory: analysis.VacancyCategory || analysis.vacancyCategory,
                 DetectedExperienceLevel: analysis.DetectedExperienceLevel || analysis.detectedExperienceLevel,
+                DetectedYearsOfExperience: analysis.DetectedYearsOfExperience || analysis.detectedYearsOfExperience,
                 DetectedEnglishLevel: analysis.DetectedEnglishLevel || analysis.detectedEnglishLevel,
                 IsModernStack: analysis.IsModernStack !== undefined ? analysis.IsModernStack : analysis.isModernStack,
                 IsMiddleLevel: analysis.IsMiddleLevel !== undefined ? analysis.IsMiddleLevel : analysis.isMiddleLevel,
@@ -1448,11 +1449,6 @@ async function updateVacancyTable(matches) {
             EnglishLevel: analysis?.DetectedEnglishLevel || analysis?.detectedEnglishLevel || vacancy.EnglishLevel || vacancy.englishLevel || 'Not specified',
             Url: vacancy.Url || vacancy.url || '#'
         };
-
-        console.log(`📝 Processing vacancy ${index + 1}: ${normalizedVacancy.Title}`);
-        console.log(`   Years: ${normalizedVacancy.DetectedYearsOfExperience}, Analysis:`, analysis);
-        console.log(`   Analysis.DetectedYearsOfExperience:`, analysis?.DetectedYearsOfExperience);
-        console.log(`   analysis.detectedYearsOfExperience:`, analysis?.detectedYearsOfExperience);
 
         const matchScore = analysis?.MatchScore || analysis?.matchScore || 0;
         const formattedScore = Math.round(matchScore);

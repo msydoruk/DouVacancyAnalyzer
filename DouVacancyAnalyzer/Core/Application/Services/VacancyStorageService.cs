@@ -47,7 +47,12 @@ public class VacancyStorageService : IVacancyStorageService
         var savedVacancies = new List<VacancyEntity>();
         var newVacancyCount = 0;
 
-        // Note: vacancies list contains ONLY NEW vacancies (existing ones are skipped during scraping)
+        // Get all existing vacancy URLs for comparison
+        var allExistingUrls = await _context.Vacancies
+            .Select(v => v.Url)
+            .ToListAsync();
+
+        // Note: vacancies list contains ONLY NEW vacancies (existing ones were skipped during scraping)
         foreach (var vacancy in vacancies)
         {
             var entity = VacancyEntity.FromVacancy(vacancy);
@@ -122,6 +127,13 @@ public class VacancyStorageService : IVacancyStorageService
         vacancy.MatchScore = (int?)analysis.MatchScore;
         vacancy.DetectedTechnologies = JsonSerializer.Serialize(analysis.DetectedTechnologies ?? new List<string>());
         vacancy.LastAnalyzedAt = DateTime.UtcNow;
+
+        // Mark as not new after first analysis
+        if (vacancy.IsNew)
+        {
+            vacancy.IsNew = false;
+            _logger.LogInformation("Marked vacancy as viewed after analysis: {Title}", vacancy.Title);
+        }
 
         await _context.SaveChangesAsync();
     }
@@ -245,5 +257,20 @@ public class VacancyStorageService : IVacancyStorageService
                 .SetProperty(x => x.LastAnalyzedAt, (DateTime?)null));
 
         _logger.LogInformation("🔄 Reset analysis data for {Count} vacancies", analysisCount);
+    }
+
+    public async Task<int> UpdateVacancyActivityStatusAsync(List<string> currentVacancyUrls)
+    {
+        // Mark vacancies that are no longer in the current list as inactive
+        var deactivatedCount = await _context.Vacancies
+            .Where(v => v.IsActive && !currentVacancyUrls.Contains(v.Url))
+            .ExecuteUpdateAsync(v => v.SetProperty(x => x.IsActive, false));
+
+        if (deactivatedCount > 0)
+        {
+            _logger.LogInformation("🔴 Deactivated {Count} vacancies that are no longer available", deactivatedCount);
+        }
+
+        return deactivatedCount;
     }
 }

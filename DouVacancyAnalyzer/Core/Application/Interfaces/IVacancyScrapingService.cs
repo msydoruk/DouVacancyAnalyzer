@@ -4,7 +4,7 @@ namespace DouVacancyAnalyzer.Core.Application.Interfaces;
 
 public interface IVacancyScrapingService
 {
-    Task<List<Vacancy>> GetVacanciesAsync(CancellationToken cancellationToken = default);
+    Task<(List<Vacancy> newVacancies, List<string> allVacancyUrls)> GetVacanciesAsync(CancellationToken cancellationToken = default);
 }
 
 

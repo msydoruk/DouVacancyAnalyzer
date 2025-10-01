@@ -57,17 +57,24 @@ public class HomeController : Controller
             await _hubContext.Clients.All.SendAsync("AnalysisStarted");
 
             await _hubContext.Clients.All.SendAsync("ProgressUpdate", "Collecting vacancies...", AnalysisConstants.ProgressScrapingStart);
-            var scrapedVacancies = await _scrapingService.GetVacanciesAsync();
+            var (newVacancies, allVacancyUrls) = await _scrapingService.GetVacanciesAsync();
+
+            // Update vacancy activity status - mark missing vacancies as inactive
+            await _hubContext.Clients.All.SendAsync("ProgressUpdate", "Updating vacancy status...", AnalysisConstants.ProgressSavingToDatabase);
+            var deactivatedCount = await _storageService.UpdateVacancyActivityStatusAsync(allVacancyUrls);
 
             // Save to database and detect new vacancies
             await _hubContext.Clients.All.SendAsync("ProgressUpdate", "Saving to database...", AnalysisConstants.ProgressSavingToDatabase);
-            var savedVacancies = await _storageService.SaveVacanciesAsync(scrapedVacancies);
+            var savedVacancies = await _storageService.SaveVacanciesAsync(newVacancies);
 
             var totalVacanciesInDb = await _storageService.GetTotalVacancyCountAsync();
-            var newVacancyCount = scrapedVacancies.Count; // All scraped vacancies are new (existing ones were skipped)
+            var newVacancyCount = newVacancies.Count;
+
+            _logger.LogInformation("📊 Scraping results: {NewCount} new vacancies, {DeactivatedCount} deactivated, {TotalInDb} total in DB",
+                newVacancyCount, deactivatedCount, totalVacanciesInDb);
 
             await _hubContext.Clients.All.SendAsync("ProgressUpdate",
-                string.Format("Found {0} total vacancies in DB, scraped {1} new", totalVacanciesInDb, newVacancyCount), AnalysisConstants.ProgressAnalysisStart);
+                string.Format("Found {0} total in DB, {1} new, {2} deactivated", totalVacanciesInDb, newVacancyCount, deactivatedCount), AnalysisConstants.ProgressAnalysisStart);
 
             // Get only unanalyzed vacancies for analysis
             var unanalyzedVacancies = await _storageService.GetUnanalyzedVacanciesAsync();
@@ -639,6 +646,121 @@ public class HomeController : Controller
             _logger.LogError(ex, "Error getting vacancy response status for URL: {VacancyUrl}", vacancyUrl);
             return Json(new { success = false, error = ex.Message });
         }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> DiagnoseDatabase()
+    {
+        try
+        {
+            var totalActive = await _dbContext.Vacancies.CountAsync(v => v.IsActive);
+            var newCount = await _dbContext.Vacancies.CountAsync(v => v.IsNew && v.IsActive);
+            var analyzedCount = await _dbContext.Vacancies.CountAsync(v => v.LastAnalyzedAt != null && v.IsActive);
+            var withYears = await _dbContext.Vacancies.CountAsync(v => v.DetectedYearsOfExperience != null && v.IsActive);
+
+            var sampleNew = await _dbContext.Vacancies
+                .Where(v => v.IsNew && v.IsActive)
+                .Select(v => new { v.Id, v.Title, v.IsNew, v.LastAnalyzedAt, v.DetectedYearsOfExperience, v.CreatedAt })
+                .OrderByDescending(v => v.CreatedAt)
+                .Take(10)
+                .ToListAsync();
+
+            var sampleAnalyzed = await _dbContext.Vacancies
+                .Where(v => v.LastAnalyzedAt != null && v.IsActive)
+                .Select(v => new { v.Id, v.Title, v.IsNew, v.DetectedYearsOfExperience, v.MatchScore })
+                .OrderByDescending(v => v.MatchScore)
+                .Take(5)
+                .ToListAsync();
+
+            return Json(new
+            {
+                success = true,
+                stats = new
+                {
+                    totalActive,
+                    newCount,
+                    analyzedCount,
+                    withYears
+                },
+                sampleNew,
+                sampleAnalyzed
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error diagnosing database");
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> FixAnalyzedVacanciesStatus()
+    {
+        try
+        {
+            // Mark all analyzed vacancies as not new
+            var updatedCount = await _dbContext.Vacancies
+                .Where(v => v.IsNew && v.LastAnalyzedAt != null)
+                .ExecuteUpdateAsync(v => v.SetProperty(x => x.IsNew, false));
+
+            _logger.LogInformation("Fixed IsNew status for {Count} analyzed vacancies", updatedCount);
+
+            return Json(new
+            {
+                success = true,
+                message = $"Fixed {updatedCount} analyzed vacancies",
+                updatedCount
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fixing analyzed vacancies status");
+            return Json(new { success = false, error = ex.Message });
+        }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> TestSerialization()
+    {
+        var testVacancy = await _dbContext.Vacancies
+            .Where(v => v.DetectedYearsOfExperience != null)
+            .FirstOrDefaultAsync();
+
+        if (testVacancy == null)
+        {
+            return Json(new { error = "No vacancy with years found" });
+        }
+
+        var match = new VacancyMatch
+        {
+            Vacancy = testVacancy.ToVacancy(),
+            Analysis = new VacancyAnalysisResult
+            {
+                VacancyCategory = testVacancy.VacancyCategory ?? VacancyCategory.Other,
+                DetectedExperienceLevel = testVacancy.DetectedExperienceLevel ?? ExperienceLevel.Unspecified,
+                DetectedYearsOfExperience = testVacancy.DetectedYearsOfExperience,
+                DetectedEnglishLevel = testVacancy.DetectedEnglishLevel ?? EnglishLevel.Unspecified,
+                IsModernStack = testVacancy.IsModernStack,
+                IsMiddleLevel = testVacancy.IsMiddleLevel,
+                HasAcceptableEnglish = testVacancy.HasAcceptableEnglish,
+                HasNoTimeTracker = testVacancy.HasNoTimeTracker,
+                IsBackendSuitable = testVacancy.IsBackendSuitable,
+                AnalysisReason = testVacancy.AnalysisReason ?? "",
+                MatchScore = testVacancy.MatchScore ?? 0,
+                DetectedTechnologies = new List<string> { "Test" }
+            }
+        };
+
+        return Json(new
+        {
+            success = true,
+            testVacancy = new
+            {
+                Title = testVacancy.Title,
+                DetectedYearsOfExperience = testVacancy.DetectedYearsOfExperience
+            },
+            match
+        });
     }
 }
 
