@@ -150,10 +150,25 @@
             <div class="card-header bg-success text-white">
                 <h5 class="mb-0">
                     <i class="fas fa-star me-2"></i>
-                    New Vacancies (since last run)
+                    New Vacancies
+                    <span class="badge bg-light text-dark ms-2" id="newVacanciesCount">0</span>
                 </h5>
             </div>
             <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <small class="text-muted">Showing new vacancies since last run</small>
+                    </div>
+                    <div>
+                        <button id="newVacanciesPrevPage" class="btn btn-sm btn-outline-secondary me-2" disabled>
+                            <i class="fas fa-chevron-left"></i> Previous
+                        </button>
+                        <span id="newVacanciesPageInfo" class="text-muted me-2">Page 1 of 1</span>
+                        <button id="newVacanciesNextPage" class="btn btn-sm btn-outline-secondary" disabled>
+                            Next <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
                 <div class="table-responsive">
                     <table class="table table-hover table-striped" id="newVacancyTable">
                         <thead class="thead-dark">
@@ -184,23 +199,35 @@
             <div class="card-header bg-dark text-white">
                 <h5 class="mb-0">
                     <i class="fas fa-bullseye me-2"></i>
-                    Matching Vacancies (Top 20)
+                    Matching Vacancies
+                    <span class="badge bg-light text-dark ms-2" id="matchingVacanciesCount">0</span>
                 </h5>
             </div>
             <div class="card-body p-4">
-                <div class="filter-buttons">
-                    <button id="filterAll" class="btn btn-outline-primary filter-btn">
-                        <i class="fas fa-list me-1"></i>
-                        All Vacancies
-                    </button>
-                    <button id="filterResponded" class="btn btn-outline-success filter-btn">
-                        <i class="fas fa-check me-1"></i>
-                        Responded
-                    </button>
-                    <button id="filterNotResponded" class="btn btn-outline-warning filter-btn">
-                        <i class="fas fa-clock me-1"></i>
-                        Not Responded
-                    </button>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="filter-buttons">
+                        <button id="filterAll" class="btn btn-outline-primary filter-btn">
+                            <i class="fas fa-list me-1"></i>
+                            All Vacancies
+                        </button>
+                        <button id="filterResponded" class="btn btn-outline-success filter-btn">
+                            <i class="fas fa-check me-1"></i>
+                            Responded
+                        </button>
+                        <button id="filterNotResponded" class="btn btn-outline-warning filter-btn">
+                            <i class="fas fa-clock me-1"></i>
+                            Not Responded
+                        </button>
+                    </div>
+                    <div>
+                        <button id="matchingPrevPage" class="btn btn-sm btn-outline-secondary me-2" disabled>
+                            <i class="fas fa-chevron-left"></i> Previous
+                        </button>
+                        <span id="matchingPageInfo" class="text-muted me-2">Page 1 of 1</span>
+                        <button id="matchingNextPage" class="btn btn-sm btn-outline-secondary" disabled>
+                            Next <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover table-striped" id="vacancyTable">
@@ -252,8 +279,26 @@
                         </button>
                     </div>
                 </div>
-                <div id="modernTech">
-                    <!-- Modern stack vacancies will be populated here -->
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped" id="modernStackTable">
+                        <thead class="thead-dark">
+                            <tr>
+                                <th>#</th>
+                                <th>Job Title</th>
+                                <th>Company</th>
+                                <th>Location</th>
+                                <th>Experience</th>
+                                <th>Years</th>
+                                <th>English</th>
+                                <th>Technologies</th>
+                                <th>Score</th>
+                                <th>Link</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -300,26 +345,6 @@
     .filter-btn {
         margin-right: 10px;
         margin-bottom: 5px;
-    }
-
-    .modern-stack-pagination {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin-top: 20px;
-    }
-
-    .modern-stack-item {
-        border-left: 4px solid #dc3545;
-        margin-bottom: 15px;
-        padding: 15px;
-        border-radius: 8px;
-        background: #f8f9fa;
-    }
-
-    .modern-stack-item h6 {
-        color: #dc3545;
-        font-weight: 600;
     }
 </style>
 

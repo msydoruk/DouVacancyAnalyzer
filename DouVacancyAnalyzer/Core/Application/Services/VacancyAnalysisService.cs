@@ -706,6 +706,12 @@ public class VacancyAnalysisService : IVacancyAnalysisService
         dbVacancy.DetectedTechnologies = JsonSerializer.Serialize(analysis.DetectedTechnologies ?? new List<string>());
         dbVacancy.LastAnalyzedAt = DateTime.UtcNow;
 
+        // Mark as not new after first analysis
+        if (dbVacancy.IsNew)
+        {
+            dbVacancy.IsNew = false;
+        }
+
         await dbContext.SaveChangesAsync();
     }
 

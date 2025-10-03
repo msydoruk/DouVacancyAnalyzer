@@ -654,10 +654,18 @@ function displayTechStats(techStats) {
     `;
 }
 
-// Modern Stack Pagination
+// Pagination settings
 let modernStackVacancies = [];
 let modernStackCurrentPage = 1;
-const modernStackPageSize = 8;
+const modernStackPageSize = 10;
+
+let matchingVacancies = [];
+let matchingCurrentPage = 1;
+const matchingPageSize = 10;
+
+let newVacanciesList = [];
+let newVacanciesCurrentPage = 1;
+const newVacanciesPageSize = 10;
 
 function displayModernTech(aiStats, report) {
     console.log('🔥 displayModernTech called with aiStats:', aiStats);
@@ -706,51 +714,51 @@ function displayModernTech(aiStats, report) {
 }
 
 function renderModernStackPage() {
-    const container = document.getElementById('modernTech');
+    const tbody = document.querySelector('#modernStackTable tbody');
     const totalPages = Math.ceil(modernStackVacancies.length / modernStackPageSize);
     const start = (modernStackCurrentPage - 1) * modernStackPageSize;
     const end = start + modernStackPageSize;
     const pageVacancies = modernStackVacancies.slice(start, end);
 
-    container.innerHTML = `
-        <div class="row">
-            ${pageVacancies.map(match => {
-                const experience = match.Analysis?.DetectedExperienceLevel || match.Analysis?.detectedExperienceLevel || match.Vacancy.Experience || match.Vacancy.experience || 'Not specified';
-                const years = match.Analysis?.DetectedYearsOfExperience || match.Analysis?.detectedYearsOfExperience || '-';
-                const englishLevel = match.Analysis?.DetectedEnglishLevel || match.Analysis?.detectedEnglishLevel || match.Vacancy.EnglishLevel || match.Vacancy.englishLevel || 'Not specified';
+    tbody.innerHTML = '';
 
-                return `
-                <div class="col-md-6 mb-3">
-                    <div class="modern-stack-item">
-                        <h6 class="fw-bold">${match.Vacancy.Title}</h6>
-                        <p class="mb-2">
-                            <strong>Company:</strong> ${match.Vacancy.Company}<br>
-                            <i class="fas fa-map-marker-alt text-muted me-1"></i><strong>Location:</strong> ${match.Vacancy.Location}<br>
-                            <strong>Experience:</strong> <span class="badge bg-info">${experience}</span>
-                            <strong>Years:</strong> <span class="badge bg-secondary">${years}</span><br>
-                            <strong>English:</strong> <span class="badge bg-success">${englishLevel}</span>
-                        </p>
-                        <div class="mb-2">
-                            <strong>Technologies:</strong><br>
-                            ${(match.Analysis.DetectedTechnologies || []).slice(0, 5).map(tech =>
-                                `<span class="badge bg-primary me-1 mb-1">${tech}</span>`
-                            ).join('')}
-                            ${(match.Analysis.DetectedTechnologies || []).length > 5 ?
-                                `<span class="text-muted">+${(match.Analysis.DetectedTechnologies || []).length - 5} more</span>` : ''
-                            }
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span class="badge bg-success">${Math.round(match.Analysis.MatchScore || 0)}% match</span>
-                            <a href="${match.Vacancy.Url}" target="_blank" class="btn btn-sm btn-outline-primary">
-                                <i class="fas fa-external-link-alt me-1"></i>View
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            `;
-            }).join('')}
-        </div>
-    `;
+    pageVacancies.forEach((match, index) => {
+        const globalIndex = start + index;
+        const vacancy = match.Vacancy || match.vacancy;
+        const analysis = match.Analysis || match.analysis;
+
+        const experience = analysis?.DetectedExperienceLevel || analysis?.detectedExperienceLevel || vacancy.Experience || vacancy.experience || 'Not specified';
+        const years = analysis?.DetectedYearsOfExperience || analysis?.detectedYearsOfExperience || '-';
+        const englishLevel = analysis?.DetectedEnglishLevel || analysis?.detectedEnglishLevel || vacancy.EnglishLevel || vacancy.englishLevel || 'Not specified';
+        const matchScore = Math.round(analysis?.MatchScore || analysis?.matchScore || 0);
+        const technologies = analysis?.DetectedTechnologies || analysis?.detectedTechnologies || [];
+
+        const techBadges = technologies.slice(0, 3).map(tech =>
+            `<span class="badge bg-primary me-1">${tech}</span>`
+        ).join('');
+        const moreTech = technologies.length > 3 ? `<small class="text-muted">+${technologies.length - 3}</small>` : '';
+
+        const row = document.createElement('tr');
+        row.className = 'align-middle';
+        row.innerHTML = `
+            <td><span class="badge bg-primary">${globalIndex + 1}</span></td>
+            <td class="fw-bold">${vacancy.Title}</td>
+            <td>${vacancy.Company}</td>
+            <td><i class="fas fa-map-marker-alt text-muted me-1"></i>${vacancy.Location}</td>
+            <td><span class="badge bg-info">${experience}</span></td>
+            <td><span class="badge bg-secondary">${years}</span></td>
+            <td><span class="badge bg-success">${englishLevel}</span></td>
+            <td>${techBadges}${moreTech}</td>
+            <td><span class="badge bg-danger">${matchScore}%</span></td>
+            <td>
+                <a href="${vacancy.Url}" target="_blank" class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-external-link-alt me-1"></i>View
+                </a>
+            </td>
+        `;
+
+        tbody.appendChild(row);
+    });
 
     // Update pagination info
     const pageInfo = document.getElementById('modernStackPageInfo');
@@ -787,26 +795,95 @@ function setupModernStackPagination() {
     }
 }
 
+// Matching Vacancies Pagination
+async function renderMatchingPage() {
+    const filteredVacancies = await getFilteredVacancies(matchingVacancies);
+    const totalPages = Math.ceil(filteredVacancies.length / matchingPageSize);
+    const start = (matchingCurrentPage - 1) * matchingPageSize;
+    const end = start + matchingPageSize;
+    const pageVacancies = filteredVacancies.slice(start, end);
+
+    await updateVacancyTable(pageVacancies);
+
+    // Update pagination info
+    const pageInfo = document.getElementById('matchingPageInfo');
+    if (pageInfo) {
+        pageInfo.textContent = `Page ${matchingCurrentPage} of ${totalPages}`;
+    }
+}
+
+function setupMatchingPagination() {
+    const prevBtn = document.getElementById('matchingPrevPage');
+    const nextBtn = document.getElementById('matchingNextPage');
+
+    if (prevBtn) {
+        prevBtn.onclick = async () => {
+            const filteredVacancies = await getFilteredVacancies(matchingVacancies);
+            const totalPages = Math.ceil(filteredVacancies.length / matchingPageSize);
+
+            if (matchingCurrentPage > 1) {
+                matchingCurrentPage--;
+                await renderMatchingPage();
+                updateMatchingPaginationButtons();
+            }
+        };
+    }
+
+    if (nextBtn) {
+        nextBtn.onclick = async () => {
+            const filteredVacancies = await getFilteredVacancies(matchingVacancies);
+            const totalPages = Math.ceil(filteredVacancies.length / matchingPageSize);
+
+            if (matchingCurrentPage < totalPages) {
+                matchingCurrentPage++;
+                await renderMatchingPage();
+                updateMatchingPaginationButtons();
+            }
+        };
+    }
+
+    updateMatchingPaginationButtons();
+}
+
+async function updateMatchingPaginationButtons() {
+    const filteredVacancies = await getFilteredVacancies(matchingVacancies);
+    const totalPages = Math.ceil(filteredVacancies.length / matchingPageSize);
+    const prevBtn = document.getElementById('matchingPrevPage');
+    const nextBtn = document.getElementById('matchingNextPage');
+
+    if (prevBtn) {
+        prevBtn.disabled = matchingCurrentPage <= 1;
+    }
+
+    if (nextBtn) {
+        nextBtn.disabled = matchingCurrentPage >= totalPages;
+    }
+}
+
 async function displayVacancies(matches) {
     console.log('displayVacancies called with matches:', matches);
 
-    // Store all matches globally for filtering
+    // Store all matches globally for filtering and pagination
     currentVacancies = matches || [];
+    matchingVacancies = matches || [];
 
-    const tbody = document.querySelector('#vacancyTable tbody');
-    const matchesList = matches || [];
+    const countBadge = document.getElementById('matchingVacanciesCount');
+    if (countBadge) {
+        countBadge.textContent = matchingVacancies.length;
+    }
 
-    if (matchesList.length === 0) {
+    if (matchingVacancies.length === 0) {
+        const tbody = document.querySelector('#vacancyTable tbody');
         tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">No matching vacancies found</td></tr>';
         return;
     }
 
-    // Limit to top 20 matching vacancies
-    const top20Matches = matchesList.slice(0, 20);
-    console.log(`📋 Showing top ${top20Matches.length} of ${matchesList.length} matching vacancies`);
+    console.log(`📋 Total matching vacancies: ${matchingVacancies.length}`);
 
-    // Use the new table update function (no cache loading needed)
-    await updateVacancyTable(top20Matches);
+    // Reset to first page and render
+    matchingCurrentPage = 1;
+    await renderMatchingPage();
+    setupMatchingPagination();
 }
 
 function displayCharts(techStats, aiStats) {
@@ -1217,46 +1294,26 @@ function showNotification(message, type) {
 function displayNewVacancies() {
     fetch('/Home/GetNewVacancies')
         .then(response => response.json())
-        .then(data => {
+        .then(async data => {
             if (data.success && data.data && data.data.length > 0) {
                 const section = document.getElementById('newVacanciesSection');
-                const tbody = document.querySelector('#newVacancyTable tbody');
+                const countBadge = document.getElementById('newVacanciesCount');
 
                 section.style.display = 'block';
 
-                tbody.innerHTML = data.data.map((vacancy, index) => {
-                    // Support both PascalCase and camelCase
-                    const title = vacancy.Title || vacancy.title || 'Not specified';
-                    const company = vacancy.Company || vacancy.company || 'Not specified';
-                    const location = vacancy.Location || vacancy.location || 'Not specified';
-                    const experience = vacancy.Experience || vacancy.experience || 'Not specified';
-                    const englishLevel = vacancy.EnglishLevel || vacancy.englishLevel || 'Not specified';
-                    const url = vacancy.Url || vacancy.url || '#';
-                    const isAnalyzed = vacancy.IsAnalyzed !== undefined ? vacancy.IsAnalyzed : vacancy.isAnalyzed;
+                // Store new vacancies for pagination
+                newVacanciesList = data.data;
 
-                    const statusBadge = isAnalyzed
-                        ? '<span class="badge bg-success">Analyzed</span>'
-                        : '<span class="badge bg-warning">Not analyzed</span>';
+                if (countBadge) {
+                    countBadge.textContent = newVacanciesList.length;
+                }
 
-                    return `
-                        <tr class="align-middle">
-                            <td><span class="badge bg-primary">${index + 1}</span></td>
-                            <td class="fw-bold">${title}</td>
-                            <td>${company}</td>
-                            <td><i class="fas fa-map-marker-alt text-muted me-1"></i>${location}</td>
-                            <td><span class="badge bg-info">${experience}</span></td>
-                            <td><span class="badge bg-success">${englishLevel}</span></td>
-                            <td>${statusBadge}</td>
-                            <td>
-                                <a href="${url}" target="_blank" class="btn btn-outline-primary btn-sm">
-                                    <i class="fas fa-external-link-alt me-1"></i>View
-                                </a>
-                            </td>
-                        </tr>
-                    `;
-                }).join('');
+                console.log(`Found ${newVacanciesList.length} new vacancies`);
 
-                console.log(`Displayed ${data.data.length} new vacancies`);
+                // Reset to first page and render
+                newVacanciesCurrentPage = 1;
+                await renderNewVacanciesPage();
+                setupNewVacanciesPagination();
             } else {
                 console.log('No new vacancies found');
                 const section = document.getElementById('newVacanciesSection');
@@ -1266,6 +1323,94 @@ function displayNewVacancies() {
         .catch(error => {
             console.error('Error loading new vacancies:', error);
         });
+}
+
+// New Vacancies Pagination
+async function renderNewVacanciesPage() {
+    const totalPages = Math.ceil(newVacanciesList.length / newVacanciesPageSize);
+    const start = (newVacanciesCurrentPage - 1) * newVacanciesPageSize;
+    const end = start + newVacanciesPageSize;
+    const pageVacancies = newVacanciesList.slice(start, end);
+
+    const tbody = document.querySelector('#newVacancyTable tbody');
+    tbody.innerHTML = '';
+
+    for (let index = 0; index < pageVacancies.length; index++) {
+        const vacancy = pageVacancies[index];
+        const globalIndex = start + index;
+
+        // Support both PascalCase and camelCase
+        const title = vacancy.Title || vacancy.title || 'Not specified';
+        const company = vacancy.Company || vacancy.company || 'Not specified';
+        const location = vacancy.Location || vacancy.location || 'Not specified';
+        const experience = vacancy.Experience || vacancy.experience || 'Not specified';
+        const englishLevel = vacancy.EnglishLevel || vacancy.englishLevel || 'Not specified';
+        const url = vacancy.Url || vacancy.url || '#';
+        const isAnalyzed = vacancy.IsAnalyzed !== undefined ? vacancy.IsAnalyzed : vacancy.isAnalyzed;
+
+        const statusBadge = isAnalyzed
+            ? '<span class="badge bg-success">Analyzed</span>'
+            : '<span class="badge bg-warning">Not analyzed</span>';
+
+        const row = document.createElement('tr');
+        row.className = 'align-middle';
+        row.innerHTML = `
+            <td><span class="badge bg-primary">${globalIndex + 1}</span></td>
+            <td class="fw-bold">${title}</td>
+            <td>${company}</td>
+            <td><i class="fas fa-map-marker-alt text-muted me-1"></i>${location}</td>
+            <td><span class="badge bg-info">${experience}</span></td>
+            <td><span class="badge bg-success">${englishLevel}</span></td>
+            <td>${statusBadge}</td>
+            <td>
+                <a href="${url}" target="_blank" class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-external-link-alt me-1"></i>View
+                </a>
+            </td>
+            <td></td>
+        `;
+
+        // Add response button to last cell
+        const buttonCell = row.cells[row.cells.length - 1];
+        const responseButton = await createResponseButton(vacancy);
+        buttonCell.appendChild(responseButton);
+
+        tbody.appendChild(row);
+    }
+
+    // Update pagination info
+    const pageInfo = document.getElementById('newVacanciesPageInfo');
+    if (pageInfo) {
+        pageInfo.textContent = `Page ${newVacanciesCurrentPage} of ${totalPages}`;
+    }
+}
+
+function setupNewVacanciesPagination() {
+    const totalPages = Math.ceil(newVacanciesList.length / newVacanciesPageSize);
+    const prevBtn = document.getElementById('newVacanciesPrevPage');
+    const nextBtn = document.getElementById('newVacanciesNextPage');
+
+    if (prevBtn) {
+        prevBtn.disabled = newVacanciesCurrentPage <= 1;
+        prevBtn.onclick = async () => {
+            if (newVacanciesCurrentPage > 1) {
+                newVacanciesCurrentPage--;
+                await renderNewVacanciesPage();
+                setupNewVacanciesPagination();
+            }
+        };
+    }
+
+    if (nextBtn) {
+        nextBtn.disabled = newVacanciesCurrentPage >= totalPages;
+        nextBtn.onclick = async () => {
+            if (newVacanciesCurrentPage < totalPages) {
+                newVacanciesCurrentPage++;
+                await renderNewVacanciesPage();
+                setupNewVacanciesPagination();
+            }
+        };
+    }
 }
 
 
@@ -1393,8 +1538,10 @@ async function createResponseButton(vacancy) {
 
 // Refresh vacancy display with current filter
 async function refreshVacancyDisplay() {
-    if (currentVacancies.length > 0) {
-        await displayFilteredVacancies();
+    if (matchingVacancies.length > 0) {
+        matchingCurrentPage = 1; // Reset to first page on filter change
+        await renderMatchingPage();
+        updateMatchingPaginationButtons();
     }
 }
 
@@ -1422,8 +1569,9 @@ async function getFilteredVacancies(vacancies) {
 
 // Display filtered vacancies
 async function displayFilteredVacancies() {
-    const filteredVacancies = await getFilteredVacancies(currentVacancies);
-    await updateVacancyTable(filteredVacancies);
+    matchingCurrentPage = 1; // Reset to first page on filter change
+    await renderMatchingPage();
+    updateMatchingPaginationButtons();
 }
 
 // Update vacancy table with response status
